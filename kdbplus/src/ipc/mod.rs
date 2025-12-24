@@ -5614,9 +5614,11 @@ pub fn q_time_to_duration(millis: i32) -> Duration {
 // >> Load Modules
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
+mod codec;
 mod connection;
 mod deserialize;
 mod format;
 mod serialize;
 // Inject into `ipc` namespace.
+pub use codec::*;
 pub use connection::*;
