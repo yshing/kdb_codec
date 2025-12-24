@@ -434,26 +434,34 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     let mut p = s;
     let mut i = 0_usize;
 
+    // Read the uncompressed size from the compressed data
     // Subtract 8 bytes from decoded bytes size as 8 bytes have already been taken as header
-    let size = match encoding {
+    let size_with_header = match encoding {
         0 => {
             i32::from_be_bytes(
                 compressed[0..4]
                     .try_into()
-                    .expect("slice does not have length 4"),
-            ) - 8
+                    .expect("Invalid compressed data: header size field must be 4 bytes"),
+            )
         }
         _ => {
             i32::from_le_bytes(
                 compressed[0..4]
                     .try_into()
-                    .expect("slice does not have length 4"),
-            ) - 8
+                    .expect("Invalid compressed data: header size field must be 4 bytes"),
+            )
         }
     };
-    let mut decompressed: Vec<u8> = Vec::with_capacity(size as usize);
+    
+    // Validate size is positive and reasonable
+    if size_with_header < 8 {
+        panic!("Invalid compressed data: size {} is less than minimum header size", size_with_header);
+    }
+    
+    let size = (size_with_header - 8) as usize;
+    let mut decompressed: Vec<u8> = Vec::with_capacity(size);
     // Assure that vector is filled with 0
-    decompressed.resize(size as usize, 0_u8);
+    decompressed.resize(size, 0_u8);
 
     // Start index of compressed body.
     // 8 bytes have already been removed as header
