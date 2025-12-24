@@ -24,7 +24,16 @@ Compression/decompression of messages is also implemented following [kdb+ implem
 
 ### Codec Pattern
 
-This library now supports the tokio codec pattern for kdb+ IPC communication, providing a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming. See [CODEC_PATTERN.md](CODEC_PATTERN.md) for detailed documentation.
+This library now supports the tokio codec pattern for kdb+ IPC communication, providing a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming. 
+
+**Features:**
+- ✅ Full compression/decompression support compatible with kdb+ (-18!/-19!)
+- ✅ Automatic message framing and buffering
+- ✅ Zero-copy operations where possible
+- ✅ Type-safe encoder/decoder traits
+- ✅ Shared compression implementation with QStream
+
+See [CODEC_PATTERN.md](CODEC_PATTERN.md) for detailed documentation.
 
 **Quick Example:**
 ```rust
