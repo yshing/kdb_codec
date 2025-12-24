@@ -499,3 +499,128 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     }
     decompressed
 }
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
+// >> Tests
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::{qattribute, qmsg_type};
+
+    #[test]
+    fn test_compress_decompress_roundtrip() {
+        // Create a message with a large K object that should be compressed
+        let large_list = K::new_long_list(vec![1; 3000], qattribute::NONE);
+        let message = KdbMessage::new(1, large_list); // synchronous message
+
+        // Encode the message (this should trigger compression for non-local)
+        let mut codec = KdbCodec::new(false); // not local, so compression enabled
+        let mut buffer = BytesMut::new();
+        codec.encode(message.clone(), &mut buffer).unwrap();
+
+        // The buffer should contain a complete message
+        assert!(buffer.len() > 0);
+
+        // Decode the message
+        let decoded = codec.decode(&mut buffer).unwrap();
+        assert!(decoded.is_some());
+
+        let response = decoded.unwrap();
+        assert_eq!(response.message_type, 1);
+
+        // Verify the decoded payload matches the original
+        let decoded_list = response.payload.as_vec::<i64>().unwrap();
+        assert_eq!(decoded_list.len(), 3000);
+        assert_eq!(decoded_list[0], 1);
+    }
+
+    #[test]
+    fn test_small_message_no_compression() {
+        // Create a small message that should NOT be compressed
+        let small_list = K::new_long_list(vec![1, 2, 3, 4, 5], qattribute::NONE);
+        let message = KdbMessage::new(1, small_list);
+
+        // Encode the message
+        let mut codec = KdbCodec::new(false); // not local
+        let mut buffer = BytesMut::new();
+        codec.encode(message.clone(), &mut buffer).unwrap();
+
+        // Check the compression flag in the header (should be 0)
+        assert_eq!(buffer[2], 0); // compressed flag at byte 2
+
+        // Decode the message
+        let decoded = codec.decode(&mut buffer).unwrap();
+        assert!(decoded.is_some());
+
+        let response = decoded.unwrap();
+        let decoded_list = response.payload.as_vec::<i64>().unwrap();
+        assert_eq!(*decoded_list, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_local_connection_no_compression() {
+        // Create a large message with local connection
+        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let message = KdbMessage::new(1, large_list);
+
+        // Encode with local connection (compression disabled)
+        let mut codec = KdbCodec::new(true); // local connection
+        let mut buffer = BytesMut::new();
+        codec.encode(message.clone(), &mut buffer).unwrap();
+
+        // Check the compression flag in the header (should be 0 even for large message)
+        assert_eq!(buffer[2], 0); // compressed flag at byte 2
+
+        // Decode the message
+        let decoded = codec.decode(&mut buffer).unwrap();
+        assert!(decoded.is_some());
+
+        let response = decoded.unwrap();
+        let decoded_list = response.payload.as_vec::<i64>().unwrap();
+        assert_eq!(decoded_list.len(), 3000);
+        assert_eq!(decoded_list[0], 42);
+    }
+
+    #[test]
+    fn test_string_query_encoding() {
+        // Test encoding a string query
+        let mut codec = KdbCodec::new(true);
+        let mut buffer = BytesMut::new();
+
+        // Encode a simple string query
+        codec
+            .encode(("1+1", qmsg_type::synchronous), &mut buffer)
+            .unwrap();
+
+        // Check that we have a valid message
+        assert!(buffer.len() > HEADER_SIZE);
+
+        // Check message type
+        assert_eq!(buffer[1], qmsg_type::synchronous);
+
+        // Check that it's not compressed (string queries are typically small)
+        assert_eq!(buffer[2], 0);
+    }
+
+    #[test]
+    fn test_message_header_roundtrip() {
+        // Test message header serialization/deserialization
+        let header = MessageHeader {
+            encoding: ENCODING,
+            message_type: 1,
+            compressed: 1,
+            _unused: 0,
+            length: 1234,
+        };
+
+        let bytes = header.to_bytes();
+        let parsed = MessageHeader::from_bytes(&bytes).unwrap();
+
+        assert_eq!(parsed.encoding, header.encoding);
+        assert_eq!(parsed.message_type, header.message_type);
+        assert_eq!(parsed.compressed, header.compressed);
+        assert_eq!(parsed.length, header.length);
+    }
+}
