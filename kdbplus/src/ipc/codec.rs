@@ -12,6 +12,7 @@ use super::deserialize_sync::q_ipc_decode_sync;
 use super::serialize::ENCODING;
 use super::{qtype, Error, K, Result};
 use bytes::{BufMut, BytesMut};
+use std::convert::TryInto;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -163,33 +164,35 @@ impl Encoder<KdbMessage> for KdbCodec {
         let total_length = (HEADER_SIZE + message_length) as u32;
 
         // Determine if compression should be attempted
+        // Compression is triggered when entire message size is more than 2000 bytes
+        // and the connection is not local
         let should_compress = message_length > COMPRESSION_THRESHOLD - HEADER_SIZE && !self.is_local;
 
         if should_compress {
-            // Reserve space for header + payload
-            dst.reserve(HEADER_SIZE + message_length);
-
-            // Create a temporary buffer with header placeholder and payload
-            let mut temp_buf = BytesMut::with_capacity(HEADER_SIZE + message_length);
-            temp_buf.put_bytes(0, HEADER_SIZE); // Placeholder for header
-            temp_buf.put_slice(&payload_bytes);
+            // Prepare raw message with placeholder header and payload
+            let mut raw = Vec::with_capacity(HEADER_SIZE + message_length);
+            raw.extend_from_slice(&[ENCODING, item.message_type, 0, 0, 0, 0, 0, 0]);
+            raw.extend_from_slice(&payload_bytes);
 
             // Try to compress
-            // Note: Compression is handled by the compress function which is async in the original code
-            // For the codec pattern, we'll handle it synchronously here or mark it as uncompressed
-            // In a production implementation, you might want to handle compression differently
-
-            // For now, we'll write uncompressed (simplified)
-            let header = MessageHeader {
-                encoding: ENCODING,
-                message_type: item.message_type,
-                compressed: 0,
-                _unused: 0,
-                length: total_length,
-            };
-
-            dst.put_slice(&header.to_bytes());
-            dst.put_slice(&payload_bytes);
+            match compress_sync(raw) {
+                (true, compressed) => {
+                    // Message was compressed successfully
+                    dst.reserve(compressed.len());
+                    dst.put_slice(&compressed);
+                }
+                (false, mut uncompressed) => {
+                    // Message was not compressed (compressed size >= half of original)
+                    // Write original total data size
+                    let total_length_bytes = match ENCODING {
+                        0 => total_length.to_be_bytes(),
+                        _ => total_length.to_le_bytes(),
+                    };
+                    uncompressed[4..8].copy_from_slice(&total_length_bytes);
+                    dst.reserve(uncompressed.len());
+                    dst.put_slice(&uncompressed);
+                }
+            }
         } else {
             // Uncompressed message
             let header = MessageHeader {
@@ -286,13 +289,7 @@ impl Decoder for KdbCodec {
         // Handle decompression if needed
         let decoded_payload = if header.compressed == 1 {
             // Decompress the payload
-            // Note: The original code has async decompress function
-            // For codec, we need sync decompression
-            // This is a simplified version - you may need to implement proper decompression
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "Compressed messages not yet supported in codec",
-            ));
+            decompress_sync(payload_data.to_vec(), header.encoding)
         } else {
             payload_data.to_vec()
         };
@@ -314,4 +311,191 @@ impl Decoder for KdbCodec {
 /// Convert IO errors to our Error type
 pub fn io_error_to_kdb_error(err: io::Error) -> Error {
     Error::NetworkError(err.to_string())
+}
+
+/// Compress body synchronously. The combination of serializing the data and compressing will result in
+/// the same output as shown in the q language by using the -18! function e.g.
+/// serializing 2000 bools set to true, then compressing, will have the same output as `-18!2000#1b`.
+/// # Parameter
+/// - `raw`: Serialized message (including header).
+/// # Returns
+/// - `(bool, Vec<u8>)`: Tuple of (compressed successfully, resulting bytes)
+fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
+    let mut i = 0_u8;
+    let mut f = 0_u8;
+    let mut h0 = 0_usize;
+    let mut h = 0_usize;
+    let mut g: bool;
+    let mut compressed: Vec<u8> = Vec::with_capacity((raw.len()) / 2);
+    // Assure that vector is filled with 0
+    compressed.resize((raw.len()) / 2, 0_u8);
+
+    // Start index of compressed body
+    // 12 bytes are reserved for the header + size of raw bytes
+    let mut c = 12;
+    let mut d = c;
+    let e = compressed.len();
+    let mut p = 0_usize;
+    let mut q: usize;
+    let mut r: usize;
+    let mut s0 = 0_usize;
+
+    // Body starts from index 8
+    let mut s = 8_usize;
+    let t = raw.len();
+    let mut a = [0_i32; 256];
+
+    // Copy encode, message type, compressed and reserved
+    compressed[0..4].copy_from_slice(&raw[0..4]);
+    // Set compressed flag
+    compressed[2] = 1;
+
+    // Write size of raw bytes including a header
+    let raw_size = match ENCODING {
+        0 => (t as u32).to_be_bytes(),
+        _ => (t as u32).to_le_bytes(),
+    };
+    compressed[8..12].copy_from_slice(&raw_size);
+
+    while s < t {
+        if i == 0 {
+            if d > e - 17 {
+                // Early return when compressing to less than half failed
+                return (false, raw);
+            }
+            i = 1;
+            compressed[c] = f;
+            c = d;
+            d += 1;
+            f = 0;
+        }
+        g = s > t - 3;
+        if !g {
+            h = (raw[s] ^ raw[s + 1]) as usize;
+            p = a[h] as usize;
+            g = (0 == p) || (0 != (raw[s] ^ raw[p]));
+        }
+        if 0 < s0 {
+            a[h0] = s0 as i32;
+            s0 = 0;
+        }
+        if g {
+            h0 = h;
+            s0 = s;
+            compressed[d] = raw[s];
+            d += 1;
+            s += 1;
+        } else {
+            a[h] = s as i32;
+            f |= i;
+            p += 2;
+            s += 2;
+            r = s;
+            q = if s + 255 > t { t } else { s + 255 };
+            while (s < q) && (raw[p] == raw[s]) {
+                s += 1;
+                if s < q {
+                    p += 1;
+                }
+            }
+            compressed[d] = h as u8;
+            d += 1;
+            compressed[d] = (s - r) as u8;
+            d += 1;
+        }
+        i = i.wrapping_mul(2);
+    }
+    compressed[c] = f;
+    // Final compressed data size
+    let compressed_size = match ENCODING {
+        0 => (d as u32).to_be_bytes(),
+        _ => (d as u32).to_le_bytes(),
+    };
+    compressed[4..8].copy_from_slice(&compressed_size);
+    let _ = compressed.split_off(d);
+    (true, compressed)
+}
+
+/// Decompress body synchronously. The combination of decompressing and deserializing the data
+/// will result in the same output as shown in the q language by using the `-19!` function.
+/// # Parameter
+/// - `compressed`: Compressed serialized message (header already removed, starts with uncompressed size).
+/// - `encoding`:
+///   - `0`: Big Endian
+///   - `1`: Little Endian.
+fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
+    let mut n = 0;
+    let mut r: usize;
+    let mut f = 0_usize;
+
+    // Header has already been removed.
+    // Start index of decompressed bytes is 0
+    let mut s = 0_usize;
+    let mut p = s;
+    let mut i = 0_usize;
+
+    // Subtract 8 bytes from decoded bytes size as 8 bytes have already been taken as header
+    let size = match encoding {
+        0 => {
+            i32::from_be_bytes(
+                compressed[0..4]
+                    .try_into()
+                    .expect("slice does not have length 4"),
+            ) - 8
+        }
+        _ => {
+            i32::from_le_bytes(
+                compressed[0..4]
+                    .try_into()
+                    .expect("slice does not have length 4"),
+            ) - 8
+        }
+    };
+    let mut decompressed: Vec<u8> = Vec::with_capacity(size as usize);
+    // Assure that vector is filled with 0
+    decompressed.resize(size as usize, 0_u8);
+
+    // Start index of compressed body.
+    // 8 bytes have already been removed as header
+    let mut d = 4;
+    let mut aa = [0_i32; 256];
+    while s < decompressed.len() {
+        if i == 0 {
+            f = (0xff & compressed[d]) as usize;
+            d += 1;
+            i = 1;
+        }
+        if (f & i) != 0 {
+            r = aa[(0xff & compressed[d]) as usize] as usize;
+            d += 1;
+            decompressed[s] = decompressed[r];
+            s += 1;
+            r += 1;
+            decompressed[s] = decompressed[r];
+            s += 1;
+            r += 1;
+            n = (0xff & compressed[d]) as usize;
+            d += 1;
+            for m in 0..n {
+                decompressed[s + m] = decompressed[r + m];
+            }
+        } else {
+            decompressed[s] = compressed[d];
+            s += 1;
+            d += 1;
+        }
+        while p < s - 1 {
+            aa[((0xff & decompressed[p]) ^ (0xff & decompressed[p + 1])) as usize] = p as i32;
+            p += 1;
+        }
+        if (f & i) != 0 {
+            s += n;
+            p = s;
+        }
+        i *= 2;
+        if i == 256 {
+            i = 0;
+        }
+    }
+    decompressed
 }
