@@ -8,6 +8,7 @@
 // >> Load Libraries
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
+use super::deserialize_sync::q_ipc_decode_sync;
 use super::serialize::ENCODING;
 use super::{qtype, Error, K, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -300,13 +301,12 @@ impl Decoder for KdbCodec {
         };
 
         // Deserialize the K object
-        // Note: The original deserialize is async, but for codec we need sync
-        // This will require refactoring the deserialize module
-        // For now, we'll return an error indicating this needs implementation
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Deserialization needs to be adapted for sync codec pattern",
-        ))
+        let k_object = q_ipc_decode_sync(&decoded_payload, header.encoding);
+
+        Ok(Some(KdbResponse {
+            message_type: header.message_type,
+            payload: k_object,
+        }))
     }
 }
 

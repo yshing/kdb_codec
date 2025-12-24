@@ -5617,6 +5617,7 @@ pub fn q_time_to_duration(millis: i32) -> Duration {
 mod codec;
 mod connection;
 mod deserialize;
+mod deserialize_sync;
 mod format;
 mod serialize;
 // Inject into `ipc` namespace.
