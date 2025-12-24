@@ -22,6 +22,34 @@ As Rust was conceived to address type unsafety of C/C++, replacing C/C++ with Ru
 
 Compression/decompression of messages is also implemented following [kdb+ implementation](https://code.kx.com/q/basics/ipc/#compression).
 
+### Codec Pattern
+
+This library now supports the tokio codec pattern for kdb+ IPC communication, providing a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming. See [CODEC_PATTERN.md](CODEC_PATTERN.md) for detailed documentation.
+
+**Quick Example:**
+```rust
+use kdbplus::ipc::*;
+use tokio::net::TcpStream;
+use tokio_util::codec::Framed;
+use futures::{SinkExt, StreamExt};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let stream = TcpStream::connect("127.0.0.1:5000").await?;
+    let mut framed = Framed::new(stream, KdbCodec::new(true));
+    
+    // Using feed() + flush() for cancellation safety
+    framed.feed(("1+1", qmsg_type::synchronous)).await?;
+    framed.flush().await?;
+    if let Some(Ok(response)) = framed.next().await {
+        println!("Result: {}", response.payload);
+    }
+    Ok(())
+}
+```
+
+### Connection Methods
+
 As for connect method, usually client interfaces of q/kdb+ do not provide a listener due to its protocol. However, sometimes Rust process is connecting to an upstream and q/kdb+ starts afterward or is restarted more frequently. Then providing a listener method is a natural direction and it was achieved here. Following ways are supported to connect to kdb+:
 
 - TCP

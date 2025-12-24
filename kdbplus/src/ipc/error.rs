@@ -20,6 +20,10 @@ pub enum Error {
     InvalidDateTime,
     /// Network error.
     IO(IOError),
+    /// Network error with custom message.
+    NetworkError(String),
+    /// Invalid message size.
+    InvalidMessageSize,
     /// Tried to cast to wrong type.
     InvalidCast {
         from: &'static str,
@@ -161,6 +165,8 @@ impl PartialEq<Self> for Error {
         match (self, other) {
             (Self::IO(left), Self::IO(right)) => left.to_string() == right.to_string(),
             (Self::IO(_), _) => false,
+            (Self::NetworkError(left), Self::NetworkError(right)) => left == right,
+            (Self::InvalidMessageSize, Self::InvalidMessageSize) => true,
             (Self::InvalidCast { from: f, to: t }, Self::InvalidCast { from: f2, to: t2 }) => {
                 f == f2 && t == t2
             }
@@ -224,6 +230,8 @@ impl fmt::Display for Error {
         match self {
             Self::InvalidDateTime => write!(f, "invalid datetime"),
             Self::IO(error) => write!(f, "IO error: {}", error),
+            Self::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            Self::InvalidMessageSize => write!(f, "Invalid message size"),
             Self::InvalidCast { from, to } => write!(f, "invalid cast from {} to {}", from, to),
             Self::InvalidCastList(from) => {
                 write!(f, "invalid cast from {} to list of generics T", from)
@@ -280,6 +288,8 @@ impl fmt::Debug for Error {
         match self {
             Self::InvalidDateTime => write!(f, "invalid datetime"),
             Self::IO(error) => write!(f, "IO error: {:?}", error),
+            Self::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            Self::InvalidMessageSize => write!(f, "Invalid message size"),
             Self::InvalidCast { from, to } => write!(f, "invalid cast from {} to {}", from, to),
             Self::InvalidCastList(from) => {
                 write!(f, "invalid cast from {} to list of generics T", from)
