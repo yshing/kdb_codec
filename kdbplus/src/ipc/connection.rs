@@ -328,8 +328,8 @@ impl Query for K {
             let mut message = Vec::with_capacity(message_length + 8);
             message.extend_from_slice(&[ENCODING, message_type as u8, 0, 0, 0, 0, 0, 0]);
             message.append(&mut byte_message);
-            // Try to encode entire message.
-            match compress(message).await {
+            // Try to encode entire message using codec's compression function.
+            match super::codec::compress_sync(message) {
                 (true, compressed) => {
                     // Message was compressed
                     return compressed;
@@ -1159,199 +1159,13 @@ where
         .into());
     }
 
-    // Decompress if necessary
+    // Decompress if necessary using codec's decompression function
     if header.compressed == 0x01 {
-        body = decompress(body, header.encoding).await;
+        body = super::codec::decompress_sync(body, header.encoding);
     }
 
     Ok((
         header.message_type,
         K::q_ipc_decode(&body, header.encoding).await,
     ))
-}
-
-/// Compress body. The combination of serializing the data and compressing will result in
-/// the same output as shown in the q language by using the -18! function e.g.
-/// serializing 2000 bools set to true, then compressing, will have the same output as `-18!2000#1b`.
-/// # Parameter
-/// - `raw`: Serialized message.
-/// - `encode`: `0` if Big Endian; `1` if Little Endian.
-async fn compress(raw: Vec<u8>) -> (bool, Vec<u8>) {
-    let mut i = 0_u8;
-    let mut f = 0_u8;
-    let mut h0 = 0_usize;
-    let mut h = 0_usize;
-    let mut g: bool;
-    let mut compressed: Vec<u8> = Vec::with_capacity((raw.len()) / 2);
-    // Assure that vector is filled with 0
-    compressed.resize((raw.len()) / 2, 0_u8);
-
-    // Start index of compressed body
-    // 12 bytes are reserved for the header + size of raw bytes
-    let mut c = 12;
-    let mut d = c;
-    let e = compressed.len();
-    let mut p = 0_usize;
-    let mut q: usize;
-    let mut r: usize;
-    let mut s0 = 0_usize;
-
-    // Body starts from index 8
-    let mut s = 8_usize;
-    let t = raw.len();
-    let mut a = [0_i32; 256];
-
-    // Copy encode, message type, compressed and reserved
-    compressed[0..4].copy_from_slice(&raw[0..4]);
-    // Set compressed flag
-    compressed[2] = 1;
-
-    // Write size of raw bytes including a header
-    let raw_size = match ENCODING {
-        0 => (t as u32).to_be_bytes(),
-        _ => (t as u32).to_le_bytes(),
-    };
-    compressed[8..12].copy_from_slice(&raw_size);
-
-    while s < t {
-        if i == 0 {
-            if d > e - 17 {
-                // Early return when compressing to less than half failed
-                return (false, raw);
-            }
-            i = 1;
-            compressed[c] = f;
-            c = d;
-            d += 1;
-            f = 0;
-        }
-        g = s > t - 3;
-        if !g {
-            h = (raw[s] ^ raw[s + 1]) as usize;
-            p = a[h] as usize;
-            g = (0 == p) || (0 != (raw[s] ^ raw[p]));
-        }
-        if 0 < s0 {
-            a[h0] = s0 as i32;
-            s0 = 0;
-        }
-        if g {
-            h0 = h;
-            s0 = s;
-            compressed[d] = raw[s];
-            d += 1;
-            s += 1;
-        } else {
-            a[h] = s as i32;
-            f |= i;
-            p += 2;
-            s += 2;
-            r = s;
-            q = if s + 255 > t { t } else { s + 255 };
-            while (s < q) && (raw[p] == raw[s]) {
-                s += 1;
-                if s < q {
-                    p += 1;
-                }
-            }
-            compressed[d] = h as u8;
-            d += 1;
-            compressed[d] = (s - r) as u8;
-            d += 1;
-        }
-        i = i.wrapping_mul(2);
-    }
-    compressed[c] = f;
-    // Final compressed data size
-    let compressed_size = match ENCODING {
-        0 => (d as u32).to_be_bytes(),
-        _ => (d as u32).to_le_bytes(),
-    };
-    compressed[4..8].copy_from_slice(&compressed_size);
-    let _ = compressed.split_off(d);
-    (true, compressed)
-}
-
-/// Decompress body. The combination of decompressing and deserializing the data
-///  will result in the same output as shown in the q language by using the `-19!` function.
-/// # Parameter
-/// - `compressed`: Compressed serialized message.
-/// - `encoding`:
-///   - `0`: Big Endian
-///   - `1`: Little Endian.
-async fn decompress(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
-    let mut n = 0;
-    let mut r: usize;
-    let mut f = 0_usize;
-
-    // Header has already been removed.
-    // Start index of decompressed bytes is 0
-    let mut s = 0_usize;
-    let mut p = s;
-    let mut i = 0_usize;
-
-    // Subtract 8 bytes from decoded bytes size as 8 bytes have already been taken as header
-    let size = match encoding {
-        0 => {
-            i32::from_be_bytes(
-                compressed[0..4]
-                    .try_into()
-                    .expect("slice does not have length 4"),
-            ) - 8
-        }
-        _ => {
-            i32::from_le_bytes(
-                compressed[0..4]
-                    .try_into()
-                    .expect("slice does not have length 4"),
-            ) - 8
-        }
-    };
-    let mut decompressed: Vec<u8> = Vec::with_capacity(size as usize);
-    // Assure that vector is filled with 0
-    decompressed.resize(size as usize, 0_u8);
-
-    // Start index of compressed body.
-    // 8 bytes have already been removed as header
-    let mut d = 4;
-    let mut aa = [0_i32; 256];
-    while s < decompressed.len() {
-        if i == 0 {
-            f = (0xff & compressed[d]) as usize;
-            d += 1;
-            i = 1;
-        }
-        if (f & i) != 0 {
-            r = aa[(0xff & compressed[d]) as usize] as usize;
-            d += 1;
-            decompressed[s] = decompressed[r];
-            s += 1;
-            r += 1;
-            decompressed[s] = decompressed[r];
-            s += 1;
-            r += 1;
-            n = (0xff & compressed[d]) as usize;
-            d += 1;
-            for m in 0..n {
-                decompressed[s + m] = decompressed[r + m];
-            }
-        } else {
-            decompressed[s] = compressed[d];
-            s += 1;
-            d += 1;
-        }
-        while p < s - 1 {
-            aa[((0xff & decompressed[p]) ^ (0xff & decompressed[p + 1])) as usize] = p as i32;
-            p += 1;
-        }
-        if (f & i) != 0 {
-            s += n;
-            p = s;
-        }
-        i *= 2;
-        if i == 256 {
-            i = 0;
-        }
-    }
-    decompressed
 }

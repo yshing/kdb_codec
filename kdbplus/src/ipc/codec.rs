@@ -320,7 +320,7 @@ pub fn io_error_to_kdb_error(err: io::Error) -> Error {
 /// - `raw`: Serialized message (including header).
 /// # Returns
 /// - `(bool, Vec<u8>)`: Tuple of (compressed successfully, resulting bytes)
-fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
+pub fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
     let mut i = 0_u8;
     let mut f = 0_u8;
     let mut h0 = 0_usize;
@@ -423,7 +423,7 @@ fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
 /// - `encoding`:
 ///   - `0`: Big Endian
 ///   - `1`: Little Endian.
-fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
+pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     let mut n = 0;
     let mut r: usize;
     let mut f = 0_usize;
