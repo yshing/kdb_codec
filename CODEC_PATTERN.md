@@ -103,13 +103,57 @@ tokio::select! {
 
 ### Forwarding Messages from Channels
 
-When receiving messages from a channel and forwarding them to kdb+, use the following pattern to ensure no messages are lost or duplicated:
+When receiving messages from a channel and forwarding them to kdb+, you have two approaches:
+
+#### Approach 1: Using split() to avoid select! (Recommended)
+
+Split the framed stream into separate read and write halves. This eliminates the need for `tokio::select!` and simplifies the code:
 
 ```rust
 use tokio::sync::mpsc;
 use futures::{SinkExt, StreamExt};
 
-async fn forward_messages(
+async fn forward_with_split(
+    mut rx: mpsc::Receiver<KdbMessage>,
+    framed: Framed<TcpStream, KdbCodec>,
+) -> Result<()> {
+    // Split into independent sink (write) and stream (read)
+    let (mut sink, mut stream) = framed.split();
+    
+    // Spawn task to handle responses
+    let response_handle = tokio::spawn(async move {
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(response) => println!("Response: {}", response.payload),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+    });
+    
+    // Forward messages from channel to kdb+ (no select! needed)
+    while let Some(msg) = rx.recv().await {
+        sink.feed(msg).await?;
+        sink.flush().await?;
+    }
+    
+    // Wait for response handler to finish
+    let _ = response_handle.await;
+    Ok(())
+}
+```
+
+**Benefits:**
+- ✅ No `tokio::select!` complexity
+- ✅ Cleaner separation of concerns
+- ✅ Can process responses independently
+- ✅ More composable and easier to test
+
+#### Approach 2: Using select! (When needed)
+
+Use this when you need to coordinate between receiving messages and other operations:
+
+```rust
+async fn forward_with_select(
     mut rx: mpsc::Receiver<KdbMessage>,
     mut framed: Framed<TcpStream, KdbCodec>,
 ) -> Result<()> {
