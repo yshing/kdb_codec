@@ -43,7 +43,9 @@ async fn main() -> Result<()> {
     let mut framed = Framed::new(stream, codec);
     
     // Send a text query
-    framed.send(("1+1", qmsg_type::synchronous)).await?;
+    // Note: Using feed() + flush() is cancellation-safe, unlike send()
+    framed.feed(("1+1", qmsg_type::synchronous)).await?;
+    framed.flush().await?;
     
     // Receive response
     if let Some(Ok(response)) = framed.next().await {
@@ -66,12 +68,36 @@ let query = KdbMessage::new(
     ])
 );
 
-// Send it
-framed.send(query).await?;
+// Send it using feed() + flush() for cancellation safety
+framed.feed(query).await?;
+framed.flush().await?;
 
 // Receive response
 if let Some(Ok(response)) = framed.next().await {
     println!("Result: {}", response.payload);
+}
+```
+
+### Cancellation Safety
+
+When using the codec in contexts where cancellation is possible (e.g., `tokio::select!`), prefer `feed()` + `flush()` over `send()`:
+
+```rust
+use futures::SinkExt;
+
+// ❌ NOT cancellation-safe: message can be lost if select! cancels
+tokio::select! {
+    _ = framed.send(message) => {},
+    _ = timeout => {},
+}
+
+// ✅ Cancellation-safe: uses feed() which doesn't lose messages on cancellation
+tokio::select! {
+    _ = async {
+        framed.feed(message).await?;
+        framed.flush().await
+    } => {},
+    _ = timeout => {},
 }
 ```
 

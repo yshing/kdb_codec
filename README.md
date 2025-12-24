@@ -38,7 +38,9 @@ async fn main() -> Result<()> {
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
     let mut framed = Framed::new(stream, KdbCodec::new(true));
     
-    framed.send(("1+1", qmsg_type::synchronous)).await?;
+    // Using feed() + flush() for cancellation safety
+    framed.feed(("1+1", qmsg_type::synchronous)).await?;
+    framed.flush().await?;
     if let Some(Ok(response)) = framed.next().await {
         println!("Result: {}", response.payload);
     }

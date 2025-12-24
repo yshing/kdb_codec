@@ -25,8 +25,14 @@ async fn main() -> Result<()> {
     use futures::stream::StreamExt;
 
     // Send a synchronous text query
+    // Note: Using feed() + flush() is cancellation-safe, unlike send()
+    // which can lose the message if used in tokio::select! and another branch completes first
     framed
-        .send(("1+1", qmsg_type::synchronous))
+        .feed(("1+1", qmsg_type::synchronous))
+        .await
+        .map_err(|e| Error::NetworkError(e.to_string()))?;
+    framed
+        .flush()
         .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
 
@@ -51,8 +57,13 @@ async fn main() -> Result<()> {
         ]),
     );
 
+    // Using feed() + flush() for cancellation safety
     framed
-        .send(query)
+        .feed(query)
+        .await
+        .map_err(|e| Error::NetworkError(e.to_string()))?;
+    framed
+        .flush()
         .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
 
