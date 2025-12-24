@@ -11,7 +11,7 @@
 use super::deserialize_sync::q_ipc_decode_sync;
 use super::serialize::ENCODING;
 use super::{qtype, Error, K, Result};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -21,9 +21,6 @@ use tokio_util::codec::{Decoder, Encoder};
 
 /// Size of the kdb+ IPC message header in bytes
 const HEADER_SIZE: usize = 8;
-
-/// Minimum message size (header only)
-const MIN_MESSAGE_SIZE: usize = HEADER_SIZE;
 
 /// Compression threshold - messages larger than this may be compressed
 const COMPRESSION_THRESHOLD: usize = 2000;
