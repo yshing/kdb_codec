@@ -101,6 +101,61 @@ tokio::select! {
 }
 ```
 
+### Forwarding Messages from Channels
+
+When receiving messages from a channel and forwarding them to kdb+, use the following pattern to ensure no messages are lost or duplicated:
+
+```rust
+use tokio::sync::mpsc;
+use futures::{SinkExt, StreamExt};
+
+async fn forward_messages(
+    mut rx: mpsc::Receiver<KdbMessage>,
+    mut framed: Framed<TcpStream, KdbCodec>,
+) -> Result<()> {
+    loop {
+        tokio::select! {
+            // Receive message from channel
+            Some(msg) = rx.recv() => {
+                // feed() buffers the message without sending it yet
+                // If this select! is cancelled, msg is lost but wasn't sent
+                framed.feed(msg).await?;
+                
+                // flush() actually sends the buffered messages
+                // Only call this after successfully feeding
+                framed.flush().await?;
+                
+                // At this point, the message is guaranteed to be sent
+                // If cancellation happens before flush(), the message is buffered
+                // and will be sent on the next flush()
+            }
+            else => break, // Channel closed
+        }
+    }
+    Ok(())
+}
+```
+
+**Key Points:**
+- ✅ **No double-send**: Each `msg` from `rx.recv()` is fed and flushed exactly once
+- ✅ **No message loss after feed()**: If `feed()` succeeds, the message is buffered and will be sent on the next `flush()`
+- ⚠️ **Cancellation before feed()**: If `select!` cancels before `feed()` completes, `msg` is lost (but never sent)
+- ✅ **Separation of concerns**: `feed()` buffers, `flush()` sends - this makes the flow explicit
+
+**Avoiding double-send:**
+```rust
+// ❌ WRONG: Don't call feed() again without flush() in between
+framed.feed(msg1).await?;
+framed.feed(msg2).await?; // Both buffered
+framed.flush().await?;     // Both sent together
+
+// ✅ CORRECT: Feed and flush each message
+framed.feed(msg1).await?;
+framed.flush().await?;     // msg1 sent
+framed.feed(msg2).await?;
+framed.flush().await?;     // msg2 sent
+```
+
 ## Message Format
 
 The kdb+ IPC protocol uses an 8-byte header:
