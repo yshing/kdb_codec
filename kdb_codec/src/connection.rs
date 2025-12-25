@@ -1,16 +1,20 @@
+//! # Connection Module
+//!
+//! This module provides high-level connection abstractions for communicating with kdb+/q processes
+//! using the IPC protocol with Framed codec support for cancellation-safe operations.
+
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Load Libraries
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
-use super::serialize::ENCODING;
+use super::codec::{KdbCodec, KdbMessage};
 use super::Result;
-use super::{qtype, K};
-use async_trait::async_trait;
+use super::K;
+use futures::{SinkExt, StreamExt};
 use io::BufRead;
 use once_cell::sync::Lazy;
 use sha1_smol::Sha1;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 use std::{env, fs, io, str};
@@ -18,10 +22,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
-use tokio_native_tls::native_tls::{
-    Identity, TlsAcceptor as TlsAcceptorInner, TlsConnector as TlsConnectorInner,
-};
+use tokio_native_tls::native_tls::{Identity, TlsAcceptor as TlsAcceptorInner, TlsConnector as TlsConnectorInner};
 use tokio_native_tls::{TlsAcceptor, TlsConnector, TlsStream};
+use tokio_util::codec::Framed;
 use trust_dns_resolver::TokioAsyncResolver;
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
@@ -31,44 +34,23 @@ use trust_dns_resolver::TokioAsyncResolver;
 //%% QStream %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
 pub mod qmsg_type {
-    //! This module provides a list of q message type used for IPC.
-    //!  The motivation to contain them in a module is to tie them up as related items rather
-    //!  than scattered values. Hence user should use these indicators with `qmsg_type::` prefix, e.g., `qmsg_type::asynchronous`.
+    //! Message types for kdb+ IPC protocol
     //!
     //! # Example
-    //! ```no_run
-    //! use kdb_codec::ipc::*;
+    //! ```rust,no_run
+    //! use kdb_codec::*;
     //!
-    //! // Print `K` object.
-    //! fn print(obj: &K) {
-    //!     println!("{}", obj);
+    //! async fn print(arg: &K) {
+    //!     println!("{}", arg);
     //! }
     //!
-    //! // Calculate something from two long arguments.
-    //! fn nonsense(arg1: i64, arg2: i64) -> i64 {
-    //!     arg1 * arg2
+    //! async fn nonsense(x: i64, y: i64) -> i64 {
+    //!     x * y - 1
     //! }
     //!
     //! #[tokio::main]
     //! async fn main() -> Result<()> {
-    //!     // Connect to qprocess running on localhost:5000 via TCP
-    //!     let mut socket =
-    //!         QStream::connect(ConnectionMethod::TCP, "localhost", 5000_u16, "ideal:person").await?;
-    //!
-    //!     // Set a function which sends back a non-response message during its execution.
-    //!     socket
-    //!         .send_async_message(
-    //!             &"complex:{neg[.z.w](`print; \"counter\"); what: .z.w (`nonsense; 1; 2); what*100}",
-    //!         )
-    //!         .await?;
-    //!
-    //!     // Send a query `(`complex; ::)` without waiting for a response.
-    //!     socket
-    //!         .send_message(
-    //!             &K::new_compound_list(vec![K::new_symbol(String::from("complex")), K::new_null()]),
-    //!             qmsg_type::synchronous,
-    //!         )
-    //!         .await?;
+    //!     let mut socket = QStream::accept(ConnectionMethod::UDS, "", 5000).await?;
     //!
     //!     // Receive an asynchronous call from the function.
     //!     match socket.receive_message().await {
@@ -76,7 +58,7 @@ pub mod qmsg_type {
     //!             println!("asynchronous call: {}", message);
     //!             let list = message.as_vec::<K>().unwrap();
     //!             if list[0].get_symbol().unwrap() == "print" {
-    //!                 print(&list[1])
+    //!                 print(&list[1]).await
     //!             }
     //!         }
     //!         _ => unreachable!(),
@@ -88,7 +70,7 @@ pub mod qmsg_type {
     //!             println!("synchronous call: {}", message);
     //!             let list = message.as_vec::<K>().unwrap();
     //!             if list[0].get_symbol().unwrap() == "nonsense" {
-    //!                 let res = nonsense(list[1].get_long().unwrap(), list[2].get_long().unwrap());
+    //!                 let res = nonsense(list[1].get_long().unwrap(), list[2].get_long().unwrap()).await;
     //!                 // Send bach a response.
     //!                 socket
     //!                     .send_message(&K::new_long(res), qmsg_type::response)
@@ -126,23 +108,22 @@ const ACCOUNTS: Lazy<HashMap<String, String>> = Lazy::new(|| {
     // Open credential file
     let file = fs::OpenOptions::new()
         .read(true)
-        .open(env::var("KDBPLUS_ACCOUNT_FILE").expect("KDBPLUS_ACCOUNT_FILE is not set"))
+        .open("credential/kdbaccess")
         .expect("failed to open account file");
     let mut reader = io::BufReader::new(file);
     let mut line = String::new();
     loop {
         match reader.read_line(&mut line) {
-            Ok(0) => break,
+            Ok(0) => {
+                //EOF
+                break;
+            }
             Ok(_) => {
-                let credential = line.as_str().split(':').collect::<Vec<&str>>();
-                let mut password = credential[1];
-                if password.ends_with('\n') {
-                    password = &password[0..password.len() - 1];
-                }
-                map.insert(credential[0].to_string(), password.to_string());
+                let credential: Vec<&str> = line.trim_end().split(':').collect();
+                map.insert(credential[0].to_string(), credential[1].to_string());
                 line.clear();
             }
-            _ => unreachable!(),
+            Err(_) => break,
         }
     }
     map
@@ -166,60 +147,31 @@ pub enum ConnectionMethod {
 
 /// Feature of query object.
 pub trait Query: Send + Sync {
-    /// Serialize into q IPC bytes including a header (encoding, message type, compresssion flag and total message length).
-    ///  If the connection is within the same host, the message is not compressed under any conditions.
+    /// Convert into a KdbMessage for encoding
     /// # Parameters
     /// - `message_type`: Message type. One of followings:
     ///   - `qmsg_type::asynchronous`
     ///   - `qmsg_type::synchronous`
     ///   - `qmsg_type::response`
-    /// - `is_local`: Flag of whether the connection is within the same host.
-    fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8>;
+    fn to_kdb_message(&self, message_type: u8) -> KdbMessage;
 }
 
-//%% QStreamInner %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
+//%% FramedStream %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
-/// Features which streams communicating with q must have.
-#[async_trait]
-trait QStreamInner: Send + Sync {
-    /// Shutdown underlying stream.
-    async fn shutdown(&mut self, is_server: bool) -> Result<()>;
-    /// Send a message with a specified message type without waiting for a response.
-    /// # Parameters
-    /// - `message`: q command to execute on the remote q process.
-    /// - `message_type`: Asynchronous or synchronous.
-    /// - `is_local`: Flag of whether the connection is within the same host.
-    async fn send_message(
-        &mut self,
-        message: &dyn Query,
-        message_type: u8,
-        is_local: bool,
-    ) -> Result<()>;
-    /// Send a message asynchronously.
-    /// # Parameters
-    /// - `message`: q command in two ways:
-    ///   - `&str`: q command in a string form.
-    ///   - `K`: Query in a functional form.
-    /// - `is_local`: Flag of whether the connection is within the same host.
-    async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()>;
-    /// Send a message asynchronously.
-    /// # Parameters
-    /// - `message`: q command in two ways:
-    ///   - `&str`: q command in a string form.
-    ///   - `K`: Query in a functional form.
-    /// - `is_local`: Flag of whether the connection is within the same host.
-    async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K>;
-    /// Receive a message from a remote q process. The received message is parsed as `K` and message type is
-    ///  stored in the first returned value.
-    async fn receive_message(&mut self) -> Result<(u8, K)>;
+/// Type alias for framed streams
+enum FramedStream {
+    Tcp(Framed<TcpStream, KdbCodec>),
+    Tls(Framed<TlsStream<TcpStream>, KdbCodec>),
+    #[cfg(unix)]
+    Uds(Framed<UnixStream, KdbCodec>),
 }
 
 //%% QStream %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
 /// Stream to communicate with q/kdb+.
 pub struct QStream {
-    /// Actual stream to communicate.
-    stream: Box<dyn QStreamInner>,
+    /// Framed stream with codec
+    stream: FramedStream,
     /// Connection method. One of followings:
     /// - TCP
     /// - TLS
@@ -229,34 +181,6 @@ pub struct QStream {
     /// - `true`: Acceptor
     /// - `false`: Client
     listener: bool,
-    /// Indicator of whether the connection is within the same host.
-    /// - `true`: Connection within the same host.
-    /// - `false`: Connection with outseide.
-    local: bool,
-}
-
-//%% MessageHeader %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
-
-/// Header of q IPC data frame.
-#[derive(Clone, Copy, Debug)]
-struct MessageHeader {
-    /// Ennoding.
-    /// - 0: Big Endian
-    /// - 1: Little Endian
-    encoding: u8,
-    /// Message type. One of followings:
-    /// - 0: Asynchronous
-    /// - 1: Synchronous
-    /// - 2: Response
-    message_type: u8,
-    /// Indicator of whether the message is compressed or not.
-    /// - 0: Uncompressed
-    /// - 1: Compressed
-    compressed: u8,
-    /// Reserved byte.
-    _unused: u8,
-    /// Total length of the uncompressed message.
-    length: u32,
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
@@ -267,86 +191,17 @@ struct MessageHeader {
 
 /// Text query.
 impl Query for &str {
-    fn serialize(&self, message_type: u8, _: bool) -> Vec<u8> {
-        //  Build header //--------------------------------/
-        // Message header + (type indicator of string + header of string type) + string length
-        let byte_message = self.as_bytes();
-        let message_length = byte_message.len() as u32;
-        let total_length = MessageHeader::size() as u32 + 6 + message_length;
-
-        let total_length_bytes = match ENCODING {
-            0 => total_length.to_be_bytes(),
-            _ => total_length.to_le_bytes(),
-        };
-
-        // encode, message type, 0x00 for compression and 0x00 for reserved.
-        // Do not compress string data because it is highly unlikely that the length of the string query
-        //  is greater than 2000.
-        let mut message = Vec::with_capacity(message_length as usize + MessageHeader::size());
-        message.extend_from_slice(&[ENCODING, message_type, 0, 0]);
-        // total body length
-        message.extend_from_slice(&total_length_bytes);
-        // vector type and 0x00 for attribute
-        message.extend_from_slice(&[qtype::STRING as u8, 0]);
-
-        //  Build body //---------------------------------/
-        let length_info = match ENCODING {
-            0 => message_length.to_be_bytes(),
-            _ => message_length.to_le_bytes(),
-        };
-
-        // length of vector(message)
-        message.extend_from_slice(&length_info);
-        // message
-        message.extend_from_slice(byte_message);
-
-        message
+    fn to_kdb_message(&self, message_type: u8) -> KdbMessage {
+        // Build a K string object from the query
+        let k_string = K::new_string(self.to_string(), 0);
+        KdbMessage::new(message_type, k_string)
     }
 }
 
 /// Functional query.
 impl Query for K {
-    fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8> {
-        //  Build header //--------------------------------/
-        // Message header + encoded data size
-        let mut byte_message = self.q_ipc_encode();
-        let message_length = byte_message.len();
-        let total_length = (MessageHeader::size() + message_length) as u32;
-
-        let total_length_bytes = match ENCODING {
-            0 => total_length.to_be_bytes(),
-            _ => total_length.to_le_bytes(),
-        };
-
-        // Compression is trigerred when entire message size is more than 2000 bytes
-        //  and the connection is with outseide.
-        if message_length > 1992 && !is_local {
-            // encode, message type, 0x00 for compression, 0x00 for reserved and 0x00000000 for total size
-            let mut message = Vec::with_capacity(message_length + 8);
-            message.extend_from_slice(&[ENCODING, message_type as u8, 0, 0, 0, 0, 0, 0]);
-            message.append(&mut byte_message);
-            // Try to encode entire message using codec's compression function.
-            match super::codec::compress_sync(message) {
-                (true, compressed) => {
-                    // Message was compressed
-                    return compressed;
-                }
-                (false, mut uncompressed) => {
-                    // Message was not compressed.
-                    // Write original total data size.
-                    uncompressed[4..8].copy_from_slice(&total_length_bytes);
-                    return uncompressed;
-                }
-            }
-        } else {
-            // encode, message type, 0x00 for compression and 0x00 for reserved
-            let mut message = Vec::with_capacity(message_length + MessageHeader::size());
-            message.extend_from_slice(&[ENCODING, message_type as u8, 0, 0]);
-            // Total length of body
-            message.extend_from_slice(&total_length_bytes);
-            message.append(&mut byte_message);
-            return message;
-        }
+    fn to_kdb_message(&self, message_type: u8) -> KdbMessage {
+        KdbMessage::new(message_type, self.clone())
     }
 }
 
@@ -355,16 +210,14 @@ impl Query for K {
 impl QStream {
     /// General constructor of `QStream`.
     fn new(
-        stream: Box<dyn QStreamInner>,
+        stream: FramedStream,
         method: ConnectionMethod,
         is_listener: bool,
-        is_local: bool,
     ) -> Self {
         QStream {
-            stream: stream,
-            method: method,
+            stream,
+            method,
             listener: is_listener,
-            local: is_local,
         }
     }
 
@@ -378,9 +231,9 @@ impl QStream {
     /// - `port`: Port of the target q process.
     /// - `credential`: Credential in the form of `username:password` to connect to the target q process.
     /// # Example
-    /// ```
+    /// ```no_run
     /// use kdb_codec::qattribute;
-    /// use kdb_codec::ipc::*;
+    /// use kdb_codec::*;
     ///
     /// #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
     /// async fn main() -> Result<()> {
@@ -424,33 +277,33 @@ impl QStream {
         match method {
             ConnectionMethod::TCP => {
                 let stream = connect_tcp(host, port, credential).await?;
-                let is_local = match host {
-                    "localhost" | "127.0.0.1" => true,
-                    _ => false,
-                };
+                let is_local = matches!(host, "localhost" | "127.0.0.1");
+                let codec = KdbCodec::new(is_local);
+                let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
-                    Box::new(stream),
+                    FramedStream::Tcp(framed),
                     ConnectionMethod::TCP,
                     false,
-                    is_local,
                 ))
             }
             ConnectionMethod::TLS => {
                 let stream = connect_tls(host, port, credential).await?;
+                let codec = KdbCodec::new(false); // TLS is always remote
+                let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
-                    Box::new(stream),
+                    FramedStream::Tls(framed),
                     ConnectionMethod::TLS,
-                    false,
                     false,
                 ))
             }
             ConnectionMethod::UDS => {
                 let stream = connect_uds(port, credential).await?;
+                let codec = KdbCodec::new(true); // UDS is always local
+                let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
-                    Box::new(stream),
+                    FramedStream::Uds(framed),
                     ConnectionMethod::UDS,
                     false,
-                    true,
                 ))
             }
         }
@@ -466,7 +319,7 @@ impl QStream {
     /// - port: Listening port.
     /// # Example
     /// ```no_run
-    /// use kdb_codec::ipc::*;
+    /// use kdb_codec::*;
     ///  
     /// #[tokio::main]
     /// async fn main() -> Result<()> {
@@ -519,11 +372,13 @@ impl QStream {
                     socket = listener.accept().await?.0;
                 }
                 // Check if the connection is local
+                let is_local = ip_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+                let codec = KdbCodec::new(is_local);
+                let framed = Framed::new(socket, codec);
                 Ok(QStream::new(
-                    Box::new(socket),
+                    FramedStream::Tcp(framed),
                     ConnectionMethod::TCP,
                     true,
-                    ip_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 ))
             }
             ConnectionMethod::TLS => {
@@ -550,11 +405,12 @@ impl QStream {
                         .expect("failed to accept TLS connection");
                 }
                 // TLS is always a remote connection
+                let codec = KdbCodec::new(false);
+                let framed = Framed::new(tls_socket, codec);
                 let mut qstream = QStream::new(
-                    Box::new(TlsStream::from(tls_socket)),
-                    ConnectionMethod::TCP,
+                    FramedStream::Tls(framed),
+                    ConnectionMethod::TLS,
                     true,
-                    false,
                 );
                 // In order to close the connection from the server side, it needs to tell a client to close the connection.
                 // The `kdbplus_close_tls_connection_` will be called from the server at shutdown.
@@ -564,7 +420,7 @@ impl QStream {
                 Ok(qstream)
             }
             ConnectionMethod::UDS => {
-                // uild a sockt file path.
+                // Build a sockt file path.
                 let uds_path = create_sockfile_path(port)?;
                 let abstract_sockfile_ = format!("\x00{}", uds_path);
                 let abstract_sockfile = Path::new(&abstract_sockfile_);
@@ -578,7 +434,13 @@ impl QStream {
                     socket = listener.accept().await?.0;
                 }
                 // UDS is always a local connection
-                Ok(QStream::new(Box::new(socket), method, true, true))
+                let codec = KdbCodec::new(true);
+                let framed = Framed::new(socket, codec);
+                Ok(QStream::new(
+                    FramedStream::Uds(framed),
+                    ConnectionMethod::UDS,
+                    true,
+                ))
             }
         }
     }
@@ -587,7 +449,27 @@ impl QStream {
     /// # Example
     /// See the example of [`connect`](#method.connect).
     pub async fn shutdown(mut self) -> Result<()> {
-        self.stream.shutdown(self.listener).await
+        // For TLS listener, send the close command
+        if self.listener && matches!(self.method, ConnectionMethod::TLS) {
+            self.send_async_message(&".kdbplus.close_tls_connection_[]").await?;
+        }
+        
+        // Close the underlying stream
+        match self.stream {
+            FramedStream::Tcp(framed) => {
+                AsyncWriteExt::shutdown(&mut framed.into_inner()).await?;
+            }
+            FramedStream::Tls(framed) => {
+                if !self.listener {
+                    framed.into_inner().get_mut().shutdown()?;
+                }
+            }
+            #[cfg(unix)]
+            FramedStream::Uds(framed) => {
+                AsyncWriteExt::shutdown(&mut framed.into_inner()).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Send a message with a specified message type without waiting for a response even for a synchronous message.
@@ -603,9 +485,20 @@ impl QStream {
     /// # Example
     /// See the example of [`connect`](#method.connect).
     pub async fn send_message(&mut self, message: &dyn Query, message_type: u8) -> Result<()> {
-        self.stream
-            .send_message(message, message_type, self.local)
-            .await
+        let kdb_message = message.to_kdb_message(message_type);
+        match &mut self.stream {
+            FramedStream::Tcp(framed) => {
+                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+            }
+            FramedStream::Tls(framed) => {
+                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+            }
+            #[cfg(unix)]
+            FramedStream::Uds(framed) => {
+                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Send a message asynchronously.
@@ -616,7 +509,7 @@ impl QStream {
     /// # Example
     /// See the example of [`connect`](#method.connect).
     pub async fn send_async_message(&mut self, message: &dyn Query) -> Result<()> {
-        self.stream.send_async_message(message, self.local).await
+        self.send_message(message, qmsg_type::asynchronous).await
     }
 
     /// Send a message synchronously.
@@ -629,7 +522,17 @@ impl QStream {
     /// # Example
     /// See the example of [`connect`](#method.connect).
     pub async fn send_sync_message(&mut self, message: &dyn Query) -> Result<K> {
-        self.stream.send_sync_message(message, self.local).await
+        // Send the synchronous message
+        self.send_message(message, qmsg_type::synchronous).await?;
+        
+        // Receive the response
+        match self.receive_message().await? {
+            (qmsg_type::response, response) => Ok(response),
+            (_, message) => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("expected a response: {}", message),
+            ).into()),
+        }
     }
 
     /// Receive a message from a remote q process. The received message is parsed as `K` and message type is
@@ -637,7 +540,48 @@ impl QStream {
     /// # Example
     /// See the example of [`accept`](#method.accept).
     pub async fn receive_message(&mut self) -> Result<(u8, K)> {
-        self.stream.receive_message().await
+        match &mut self.stream {
+            FramedStream::Tcp(framed) => {
+                match framed.next().await {
+                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                    Some(Err(e)) => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        format!("Connection dropped: {}", e),
+                    ).into()),
+                    None => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        "Connection closed",
+                    ).into()),
+                }
+            }
+            FramedStream::Tls(framed) => {
+                match framed.next().await {
+                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                    Some(Err(e)) => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        format!("Connection dropped: {}", e),
+                    ).into()),
+                    None => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        "Connection closed",
+                    ).into()),
+                }
+            }
+            #[cfg(unix)]
+            FramedStream::Uds(framed) => {
+                match framed.next().await {
+                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                    Some(Err(e)) => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        format!("Connection dropped: {}", e),
+                    ).into()),
+                    None => Err(io::Error::new(
+                        io::ErrorKind::ConnectionAborted,
+                        "Connection closed",
+                    ).into()),
+                }
+            }
+        }
     }
 
     /// Return underlying connection type. One of `TCP`, `TLS` or `UDS`.
@@ -649,207 +593,6 @@ impl QStream {
             ConnectionMethod::TLS => "TLS",
             ConnectionMethod::UDS => "UDS",
         }
-    }
-
-    /// Enforce compression if the size of a message exceeds 2000 regardless of locality of the connection.
-    ///  This flag is not revertible intentionally.
-    pub fn enforce_compression(&mut self) {
-        self.local = false;
-    }
-}
-
-//%% QStreamInner %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
-
-#[async_trait]
-impl QStreamInner for TcpStream {
-    async fn shutdown(&mut self, _: bool) -> Result<()> {
-        AsyncWriteExt::shutdown(self).await?;
-        Ok(())
-    }
-
-    async fn send_message(
-        &mut self,
-        message: &dyn Query,
-        message_type: u8,
-        is_local: bool,
-    ) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(message_type, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        // Receive a response. If message type is not response it returns an error.
-        match receive_message(self).await {
-            Ok((qmsg_type::response, response)) => Ok(response),
-            Err(error) => Err(error),
-            Ok((_, message)) => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("expected a response: {}", message),
-            )
-            .into()),
-        }
-    }
-
-    async fn receive_message(&mut self) -> Result<(u8, K)> {
-        receive_message(self).await
-    }
-}
-
-#[async_trait]
-impl QStreamInner for TlsStream<TcpStream> {
-    async fn shutdown(&mut self, is_listener: bool) -> Result<()> {
-        if is_listener {
-            // Closing the handle from the server side by `self.get_mut().shutdown()` crashes due to 'assertion failed: !self.context.is_null()'.
-            // No reason to compress.
-            self.send_async_message(&".kdbplus.close_tls_connection_[]", false)
-                .await
-                .into()
-        } else {
-            self.get_mut().shutdown()?;
-            Ok(())
-        }
-    }
-
-    async fn send_message(
-        &mut self,
-        message: &dyn Query,
-        message_type: u8,
-        is_local: bool,
-    ) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(message_type, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        // Receive a response. If message type is not response it returns an error.
-        match receive_message(self).await {
-            Ok((qmsg_type::response, response)) => Ok(response),
-            Err(error) => Err(error),
-            Ok((_, message)) => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("expected a response: {}", message),
-            )
-            .into()),
-        }
-    }
-
-    async fn receive_message(&mut self) -> Result<(u8, K)> {
-        receive_message(self).await
-    }
-}
-
-#[async_trait]
-impl QStreamInner for UnixStream {
-    /// Close a handle to a q process which is connected with Unix Domain Socket.
-    ///  Socket file is removed.
-    async fn shutdown(&mut self, _: bool) -> Result<()> {
-        AsyncWriteExt::shutdown(self).await?;
-        Ok(())
-    }
-
-    async fn send_message(
-        &mut self,
-        message: &dyn Query,
-        message_type: u8,
-        is_local: bool,
-    ) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(message_type, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        Ok(())
-    }
-
-    async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
-        // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
-        // Send the message
-        write_all_cancellation_safe(self, &byte_message).await?;
-        // Receive a response. If message type is not response it returns an error.
-        match receive_message(self).await {
-            Ok((qmsg_type::response, response)) => Ok(response),
-            Err(error) => Err(error),
-            Ok((_, message)) => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("expected a response: {}", message),
-            )
-            .into()),
-        }
-    }
-
-    async fn receive_message(&mut self) -> Result<(u8, K)> {
-        receive_message(self).await
-    }
-}
-
-//%% MessageHeader %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
-
-impl MessageHeader {
-    /// Constructor.
-    fn new(encoding: u8, message_type: u8, compressed: u8, length: u32) -> Self {
-        MessageHeader {
-            encoding: encoding,
-            message_type: message_type,
-            compressed: compressed,
-            _unused: 0,
-            length: length,
-        }
-    }
-
-    /// Constructor from bytes.
-    fn from_bytes(bytes: [u8; 8]) -> Self {
-        let encoding = bytes[0];
-
-        let length = match encoding {
-            0 => u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
-            _ => u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-        };
-
-        // Build header
-        MessageHeader::new(encoding, bytes[1], bytes[2], length)
-    }
-
-    /// Length of bytes for a header.
-    fn size() -> usize {
-        8
     }
 }
 
@@ -871,34 +614,26 @@ impl MessageHeader {
 async fn connect_tcp_impl(host: &str, port: u16) -> Result<TcpStream> {
     // DNS system resolver (should not fail)
     let resolver =
-        TokioAsyncResolver::tokio_from_system_conf().expect("failed to create a resolver");
+        TokioAsyncResolver::tokio_from_system_conf().expect("failed to create DNS resolver");
 
     // Check if we were given an IP address
     let ips;
     if let Ok(ip) = host.parse::<IpAddr>() {
         ips = vec![ip.to_string()]
     } else {
-        // Resolve the given hostname
-        ips = resolver
-            .ipv4_lookup(format!("{}.", host).as_str())
+        // Resolve hostname to IP addresses
+        let response = resolver
+            .lookup_ip(host)
             .await
-            .unwrap()
-            .iter()
-            .map(|result| result.to_string())
-            .collect()
-    };
+            .expect(&format!("failed to resolve host: {}", host));
+        ips = response.iter().map(|ip| ip.to_string()).collect();
+    }
 
+    // Try each resolved IP
     for answer in ips {
-        let host_port = format!("{}:{}", answer, port);
-        // Return if this IP address is valid
-        match TcpStream::connect(&host_port).await {
-            Ok(socket) => {
-                println!("connected: {}", host_port);
-                return Ok(socket);
-            }
-            Err(_) => {
-                eprintln!("connection refused: {}. try next.", host_port);
-            }
+        match TcpStream::connect(format!("{}:{}", answer, port)).await {
+            Ok(socket) => return Ok(socket),
+            Err(_) => continue,
         }
     }
     // All addresses failed.
@@ -910,18 +645,14 @@ async fn handshake<S>(socket: &mut S, credential_: &str, method_bytes: &str) -> 
 where
     S: Unpin + AsyncWriteExt + AsyncReadExt,
 {
-    // Send credential
-    let credential = credential_.to_string() + method_bytes;
-    write_all_cancellation_safe(socket, credential.as_bytes()).await?;
-
-    // Placeholder of common capablility
-    let mut cap = [0u8; 1];
-    if let Err(_) = socket.read_exact(&mut cap).await {
-        // Connection is closed in case of authentication failure
-        Err(io::Error::new(io::ErrorKind::ConnectionAborted, "authentication failure").into())
-    } else {
-        Ok(())
-    }
+    // Send credential and method
+    let mut credential = credential_.to_string();
+    credential.push_str(method_bytes);
+    socket.write_all(credential.as_bytes()).await?;
+    // Read a single byte
+    let mut capacity = [0u8; 1];
+    socket.read_exact(&mut capacity).await?;
+    Ok(())
 }
 
 /// Connect to q process running on a specified `host` and `port` via TCP with a credential `username:password`.
@@ -930,9 +661,7 @@ where
 /// - `port`: Port of the target q process.
 /// - `credential`: Credential in the form of `username:password` to connect to the target q process.
 async fn connect_tcp(host: &str, port: u16, credential: &str) -> Result<TcpStream> {
-    // Connect via TCP
     let mut socket = connect_tcp_impl(host, port).await?;
-    // Handshake
     handshake(&mut socket, credential, "\x03\x00").await?;
     Ok(socket)
 }
@@ -1085,84 +814,4 @@ async fn build_identity_from_cert() -> Result<Identity> {
             io::Error::new(io::ErrorKind::NotFound, "KDBPLUS_TLS_KEY_FILE is not set").into(),
         );
     }
-}
-
-//%% QStream Query %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
-
-/// Read bytes exactly the same length of bytes as the buffer length.
-async fn read_exact_cancellation_safe<S>(socket: &mut S, buffer: &mut [u8]) -> Result<usize>
-where
-    S: Unpin + AsyncReadExt,
-{
-    let mut read_total = 0;
-    let to_read = buffer.len();
-    loop {
-        read_total += socket.read(buffer).await?;
-        if read_total == to_read {
-            break;
-        }
-    }
-    Ok(read_total)
-}
-
-/// Write all bytes in the buffer length.
-async fn write_all_cancellation_safe<S>(socket: &mut S, buffer: &[u8]) -> Result<usize>
-where
-    S: Unpin + AsyncWriteExt,
-{
-    let mut write_total = 0;
-    let to_write = buffer.len();
-    loop {
-        write_total += socket.write(&buffer[write_total..]).await?;
-        if write_total == to_write {
-            break;
-        }
-    }
-    Ok(write_total)
-}
-
-/// Receive a message from q process with decompression if necessary. The received message is parsed as `K` and message type is
-///  stored in the first returned value.
-/// # Parameters
-/// - `socket`: Socket to communicate with a q process. Either of `TcpStream`, `TlsStream<TcpStream>` or `UnixStream`.
-async fn receive_message<S>(socket: &mut S) -> Result<(u8, K)>
-where
-    S: Unpin + AsyncReadExt,
-{
-    // Read header
-    let mut header_buffer = [0u8; 8];
-    if let Err(err) = read_exact_cancellation_safe(socket, &mut header_buffer).await {
-        // The expected message is header or EOF (close due to q process failure resulting from a bad query)
-        return Err(io::Error::new(
-            io::ErrorKind::ConnectionAborted,
-            format!("Connection dropped: {}", err),
-        )
-        .into());
-    }
-
-    // Parse message header
-    let header = MessageHeader::from_bytes(header_buffer);
-
-    // Read body
-    let body_length = header.length as usize - MessageHeader::size();
-    let mut body: Vec<u8> = Vec::with_capacity(body_length);
-    body.resize(body_length, 0_u8);
-    if let Err(err) = read_exact_cancellation_safe(socket, &mut body).await {
-        // Fails if q process fails before reading the body
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!("Failed to read body of message: {}", err),
-        )
-        .into());
-    }
-
-    // Decompress if necessary using codec's decompression function
-    if header.compressed == 0x01 {
-        body = super::codec::decompress_sync(body, header.encoding);
-    }
-
-    Ok((
-        header.message_type,
-        K::q_ipc_decode(&body, header.encoding).await,
-    ))
 }
