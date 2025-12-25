@@ -84,7 +84,6 @@ mod conversions;
 // IPC modules
 mod codec;
 mod connection;
-mod deserialize;
 mod deserialize_sync;
 mod format;
 mod serialize;

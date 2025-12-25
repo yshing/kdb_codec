@@ -232,7 +232,6 @@ impl QStream {
     /// - `credential`: Credential in the form of `username:password` to connect to the target q process.
     /// # Example
     /// ```no_run
-    /// use kdb_codec::qattribute;
     /// use kdb_codec::*;
     ///
     /// #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -641,7 +640,7 @@ async fn connect_tcp_impl(host: &str, port: u16) -> Result<TcpStream> {
 }
 
 /// Send a credential and receive a common capacity.
-async fn handshake<S>(socket: &mut S, credential_: &str, method_bytes: &str) -> Result<()>
+pub async fn handshake<S>(socket: &mut S, credential_: &str, method_bytes: &str) -> Result<()>
 where
     S: Unpin + AsyncWriteExt + AsyncReadExt,
 {

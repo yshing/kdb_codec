@@ -158,7 +158,10 @@ pub(crate) fn q_ipc_decode_sync(bytes: &[u8], encode: u8) -> K {
 
 fn deserialize_bytes_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K, usize) {
     // Type of q object is stored in a byte
+    assert!(cursor < bytes.len(), "deserialize_bytes_sync: cursor {} is beyond bytes length {}", cursor, bytes.len());
+    
     let qtype = bytes[cursor] as i8;
+    
     match qtype {
         qtype::BOOL_ATOM => deserialize_bool(bytes, cursor + 1, encode),
         qtype::GUID_ATOM => deserialize_guid(bytes, cursor + 1, encode),
@@ -245,6 +248,14 @@ fn deserialize_symbol(bytes: &[u8], cursor: usize, _: u8) -> (K, usize) {
 
 /// Extract attribute and list length and then proceed the cursor.
 fn get_attribute_and_size(bytes: &[u8], cursor: usize, encode: u8) -> (i8, usize, usize) {
+    // Ensure we have enough bytes for attribute (1) + size (4)
+    assert!(
+        cursor + 5 <= bytes.len(),
+        "get_attribute_and_size: insufficient data at cursor {}. Need 5 bytes but only {} available",
+        cursor,
+        bytes.len().saturating_sub(cursor)
+    );
+    
     let size = match encode {
         0 => u32::from_be_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
         _ => u32::from_le_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
@@ -326,7 +337,14 @@ fn deserialize_compound_list_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K
 }
 
 fn deserialize_table_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K, usize) {
-    // Table is dictionary
+    // Table format: [attribute (1 byte)] [dictionary_qtype (1 byte)] [dictionary_data]
+    // Skip attribute byte
+    let _attribute = bytes[cursor] as i8;
+    // Skip dictionary qtype byte (should be 99 or 127)
+    let _dict_qtype = bytes[cursor + 1] as i8;
+    let cursor = cursor + 2;
+    
+    // Deserialize the dictionary (keys and values)
     let (dictionary, cursor) = deserialize_dictionary_sync(bytes, cursor, encode);
     (
         K::new(qtype::TABLE, qattribute::NONE, k0_inner::table(dictionary)),

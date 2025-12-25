@@ -172,7 +172,7 @@ async fn receive_responses<St>(
     tx: mpsc::Sender<K>,
 ) -> std::result::Result<(), String>
 where
-    St: StreamExt<Item = std::result::Result<KdbResponse, std::io::Error>> + Unpin,
+    St: StreamExt<Item = std::result::Result<KdbMessage, std::io::Error>> + Unpin,
 {
     while let Some(result) = stream.next().await {
         match result {

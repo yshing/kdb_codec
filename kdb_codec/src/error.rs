@@ -133,7 +133,7 @@ impl Error {
     /// Comsume error and retrieve original object returned from some operation.
     /// `None` is returned if the error does not contain `K` object.
     /// ```
-    /// use kdb_codec::ipc::*;
+    /// use kdb_codec::*;
     ///
     /// fn main(){
     ///   let int = K::new_int(777);

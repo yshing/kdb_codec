@@ -4,13 +4,42 @@
 
 A Rust library focused on handling the kdb+ IPC (Inter-Process Communication) wire protocol. This library provides efficient encoding, decoding, and communication with q/kdb+ processes using idiomatic Rust patterns.
 
+**Inspired by the original [kdbplus](https://crates.io/crates/kdbplus) crate**, this library addresses critical **cancellation safety** issues while maintaining full compatibility with the kdb+ IPC protocol.
+
+## Why This Library?
+
+The original kdbplus crate had a fundamental cancellation safety issue in its `receive_message()` implementation. When used with `tokio::select!` or other cancellation-aware patterns, partial reads could cause message corruption:
+
+```rust
+// ⚠️ UNSAFE - could lose data on cancellation in original kdbplus
+select! {
+    msg = socket.receive_message() => { /* ... */ }
+    _ = timeout => { /* partial read gets lost */ }
+}
+```
+
+**Our Solution:** This library uses `tokio-util::codec::Framed` with a custom `KdbCodec`, ensuring true cancellation safety:
+
+```rust
+// ✅ SAFE - Framed maintains buffer state across cancellations
+let mut framed = Framed::new(stream, KdbCodec::new(true));
+select! {
+    msg = framed.next() => { /* buffer state preserved */ }
+    _ = timeout => { /* can safely retry */ }
+}
+```
+
+The Framed pattern maintains internal buffer state, so cancelled reads never lose data. All partial reads are preserved in the codec's buffer and properly reassembled on the next attempt.
+
 ## Features
 
-- **Tokio Codec Pattern**: Modern async/await interface using `tokio-util::codec`
+- **Cancellation Safe**: Built on `tokio-util::codec::Framed` for true cancellation safety
+- **Tokio Codec Pattern**: Modern async/await interface with proper buffer management
 - **QStream Client**: High-level async client for q/kdb+ communication
 - **Full Compression Support**: Compatible with kdb+ `-18!` (compress) and `-19!` (decompress)
 - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 - **Type-Safe**: Strong typing for all kdb+ data types
+- **Minimal Dependencies**: No `async-recursion` or unnecessary proc-macros
 - **Zero-Copy Operations**: Efficient message handling with minimal allocations
 
 ## Rust IPC Interface for q/kdb+
@@ -24,20 +53,21 @@ Compression/decompression of messages is fully implemented following the [kdb+ s
 
 ## Codec Pattern
 
-The library provides a tokio codec implementation for kdb+ IPC communication, offering a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming.
+The library provides a tokio codec implementation for kdb+ IPC communication, offering a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming with **guaranteed cancellation safety**.
 
 **Key Features:**
+- ✅ **Cancellation safe** - buffer state preserved across cancellations
 - ✅ Full compression/decompression support compatible with kdb+ (-18!/-19!)
 - ✅ Automatic message framing and buffering
 - ✅ Zero-copy operations where possible
 - ✅ Type-safe encoder/decoder traits
-- ✅ Shared compression implementation with QStream
+- ✅ No `async-recursion` dependency (uses synchronous deserialization)
 
 See [CODEC_PATTERN.md](CODEC_PATTERN.md) for detailed documentation.
 
 **Quick Example:**
 ```rust
-use kdb_codec::ipc::*;
+use kdb_codec::*;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use futures::{SinkExt, StreamExt};
@@ -47,14 +77,58 @@ async fn main() -> Result<()> {
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
     let mut framed = Framed::new(stream, KdbCodec::new(true));
     
-    // Using feed() + flush() for cancellation safety
-    framed.feed(("1+1", qmsg_type::synchronous)).await?;
-    framed.flush().await?;
+    // Send query - cancellation safe!
+    let query = K::new_string("1+1".to_string(), 0);
+    let msg = KdbMessage::new(qmsg_type::synchronous, query);
+    framed.send(msg).await?;
+    
+    // Receive response - even if cancelled, buffer state is preserved
     if let Some(Ok(response)) = framed.next().await {
         println!("Result: {}", response.payload);
     }
     Ok(())
 }
+```
+
+### QStream - High-Level Client
+
+For a more convenient API, use `QStream` which wraps the codec:
+
+```rust
+use kdb_codec::*;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut stream = QStream::connect(
+        ConnectionMethod::TCP, 
+        "localhost", 
+        5000, 
+        "user:pass"
+    ).await?;
+    
+    // All operations are cancellation safe
+    let result = stream.send_sync_message(&"2+2").await?;
+    println!("Result: {}", result.get_int()?);
+    
+    Ok(())
+}
+```
+
+**Tip:** For advanced use cases requiring separate send/receive channels, you can split the underlying Framed stream:
+
+```rust
+let stream = TcpStream::connect("127.0.0.1:5000").await?;
+let framed = Framed::new(stream, KdbCodec::new(true));
+let (mut writer, mut reader) = framed.split();
+
+// Use writer and reader independently
+tokio::spawn(async move {
+    while let Some(Ok(msg)) = reader.next().await {
+        println!("Received: {:?}", msg);
+    }
+});
+
+writer.send(msg).await?;
 ```
 
 ### Connection Methods
@@ -128,7 +202,7 @@ the inner type is `i64` denoting an elapsed time in nanoseconds since `2000.01.0
 #### Client
 
 ```rust
-use kdb_codec::ipc::*;
+use kdb_codec::*;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> Result<()> {
@@ -171,7 +245,7 @@ async fn main() -> Result<()> {
 #### Listener
 
 ```rust
-use kdb_codec::ipc::*;
+use kdb_codec::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -195,6 +269,51 @@ Then q client can connect to this acceptor with the acceptor's host, port and th
 q)h:hopen `::7000:reluctant:slowday
 ```
 
+## Architecture & Design
+
+### Cancellation Safety
+
+The core innovation of this library is its use of `tokio-util::codec::Framed` which provides automatic buffer management:
+
+- **Buffer Preservation**: Partial reads are stored in the codec's internal buffer
+- **Resumable Operations**: Cancelled reads can be safely retried without data loss
+- **No Manual State Management**: The Framed wrapper handles all buffer lifecycle
+
+This is critical for production systems using patterns like:
+- `tokio::select!` for timeouts or concurrent operations
+- Graceful shutdown with cancellation
+- Request racing or fallback logic
+
+### Synchronous Deserialization
+
+Unlike the original kdbplus crate, we use **synchronous deserialization** without `async-recursion`:
+
+- **Simpler**: No async recursion complexity
+- **Faster**: Eliminates async overhead for CPU-bound deserialization
+- **Smaller**: No `async-recursion` proc-macro dependency
+- **Safer**: Avoids potential stack overflow from deep async recursion
+
+The deserialization happens in `deserialize_sync.rs` and is called from the codec's `decode()` method after the complete message is buffered.
+
+### Why Not Add `split()` to QStream?
+
+While we show how to split the underlying Framed stream in examples, we **don't recommend** adding a `split()` method directly to `QStream` because:
+
+1. **Protocol Semantics**: KDB+ IPC is request-response oriented. Splitting would allow sending multiple requests before receiving responses, which can confuse message correlation.
+
+2. **Complexity**: Users would need to manually track which response corresponds to which request.
+
+3. **Better Alternatives**: For concurrent operations, use multiple `QStream` instances or the lower-level `Framed` API directly when you need full control.
+
+If you need independent send/receive channels, access the underlying stream:
+
+```rust
+let stream = TcpStream::connect("127.0.0.1:5000").await?;
+let framed = Framed::new(stream, KdbCodec::new(true));
+let (writer, reader) = framed.split();
+// Now you have full control
+```
+
 ### Installation
 
 Add `kdb_codec` to your `Cargo.toml`:
@@ -205,6 +324,36 @@ kdb_codec = "0.4"
 ```
 
 The IPC feature is enabled by default.
+
+## Testing
+
+### Unit Tests
+
+Run the standard unit tests (no kdb+ server required):
+
+```bash
+cargo test --package kdb_codec --lib --tests
+```
+
+### Integration Tests
+
+Some tests require a running kdb+ server and are marked as `#[ignore]` by default. To run these tests:
+
+1. Start a kdb+ server on `localhost:5001` with credentials `kdbuser:pass`:
+   ```bash
+   q -p 5001 -u path/to/passwd/file
+   ```
+
+2. Run the ignored tests:
+   ```bash
+   cargo test --package kdb_codec --tests -- --ignored
+   ```
+
+The integration tests include:
+- `functional_message_test`: Tests various message types and operations
+- `compression_test`: Tests compression functionality with large data
+
+**Note**: These tests are automatically skipped in CI/CD unless a kdb+ server is explicitly configured.
 
 ## Documentation
 

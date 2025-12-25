@@ -2053,7 +2053,7 @@ fn push_pop_test() -> Result<()> {
 #[ignore]
 async fn functional_message_test(socket: &mut Qsocket) -> Result<()> {
     // Connect to q process
-    let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000, "kdbuser:pass")
+    let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5001, "kdbuser:pass")
         .await
         .expect("Failed to connect");
 
@@ -2844,7 +2844,7 @@ async fn functional_message_test(socket: &mut Qsocket) -> Result<()> {
 #[ignore]
 async fn compression_test() -> Result<()> {
     // Connect to q process
-    let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000_u16, "kdbuser:pass")
+    let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5001_u16, "kdbuser:pass")
         .await
         .expect("Failed to connect");
 

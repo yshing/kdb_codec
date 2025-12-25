@@ -12,8 +12,6 @@ Kdb+ IPC codec library for handling kdb+ wire protocol data with Rust.
 """
 
 [dependencies]
-async-trait = {version = "0.1", optional = true}
-async-recursion = "1"
 bytes = { version = "1", optional = true }
 chrono={version = "0.4", optional = true}
 futures = { version = "0.3", optional = true }
@@ -27,7 +25,7 @@ trust-dns-resolver = { version = "0.22", optional = true }
 [features]
 # IPC is the default and only feature
 default = ["ipc"]
-ipc = ["once_cell", "chrono", "trust-dns-resolver", "tokio", "tokio-native-tls", "tokio-util", "bytes", "async-trait", "sha1_smol", "futures"]
+ipc = ["once_cell", "chrono", "trust-dns-resolver", "tokio", "tokio-native-tls", "tokio-util", "bytes", "sha1_smol", "futures"]
 
 [dev-dependencies]
 # IPC test and example
