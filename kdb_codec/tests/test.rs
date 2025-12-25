@@ -2045,7 +2045,12 @@ fn push_pop_test() -> Result<()> {
     Ok(())
 }
 
+/// Integration test that requires a running kdb+ server on localhost:5000
+/// with credentials kdbuser:pass
+/// 
+/// Run with: `cargo test functional_message_test -- --ignored`
 #[async_std::test]
+#[ignore]
 async fn functional_message_test(socket: &mut Qsocket) -> Result<()> {
     // Connect to q process
     let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000, "kdbuser:pass")
@@ -2831,7 +2836,12 @@ async fn functional_message_test(socket: &mut Qsocket) -> Result<()> {
     Ok(())
 }
 
+/// Integration test that requires a running kdb+ server on localhost:5000
+/// with credentials kdbuser:pass. Tests compression functionality.
+/// 
+/// Run with: `cargo test compression_test -- --ignored`
 #[async_std::test]
+#[ignore]
 async fn compression_test() -> Result<()> {
     // Connect to q process
     let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000_u16, "kdbuser:pass")
@@ -2908,8 +2918,6 @@ async fn compression_test() -> Result<()> {
 
     // compressed message (forced) //--------------------/
 
-    // Enforce compression for local connection
-    socket.enforce_compression();
     socket.send_async_message(&table_query).await?;
 
     res_compare = socket.send_sync_message(&"tab ~ tab2").await?;

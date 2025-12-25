@@ -46,55 +46,63 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-build-target-
 
-    - name: Download and install kdb+
-      run: |
-        # Download kdb+ (free 64-bit version for Linux)
-        mkdir -p $HOME/q
-        cd $HOME/q
-        wget -q https://github.com/KxSystems/kdb/releases/download/v4.1t-2024.08.16/linux-x64.zip
-        unzip -q linux-x64.zip
-        chmod +x q/l64/q
+    # - name: Download and install kdb+
+    #   run: |
+    #     # Download kdb+ (free 64-bit version for Linux)
+    #     mkdir -p $HOME/q
+    #     cd $HOME/q
+    #     wget -q https://github.com/KxSystems/kdb/releases/download/v4.1t-2024.08.16/linux-x64.zip
+    #     unzip -q linux-x64.zip
+    #     chmod +x q/l64/q
         
-        # Add to PATH
-        echo "$HOME/q/q/l64" >> $GITHUB_PATH
+    #     # Add to PATH
+    #     echo "$HOME/q/q/l64" >> $GITHUB_PATH
         
-        # Create password file for authentication
-        mkdir -p $HOME/.kdb
-        # Generate SHA1 hash for password "pass" for user "kdbuser"
-        # kdbuser:pass -> kdbuser:9d4e1e23bd5b727046a9e3b4b7db57bd8d6ee684
-        echo "kdbuser:9d4e1e23bd5b727046a9e3b4b7db57bd8d6ee684" > $HOME/.kdb/passwd
+    #     # Create password file for authentication
+    #     mkdir -p $HOME/.kdb
+    #     # Generate SHA1 hash for password "pass" for user "kdbuser"
+    #     # kdbuser:pass -> kdbuser:9d4e1e23bd5b727046a9e3b4b7db57bd8d6ee684
+    #     echo "kdbuser:9d4e1e23bd5b727046a9e3b4b7db57bd8d6ee684" > $HOME/.kdb/passwd
 
-    - name: Start kdb+ server
-      run: |
-        cd $HOME/q/q
-        # Start q on port 5000 in the background with authentication
-        nohup ./l64/q -p 5000 -u $HOME/.kdb/passwd > q.log 2>&1 &
-        echo $! > q.pid
+    # - name: Start kdb+ server
+    #   run: |
+    #     cd $HOME/q/q
+    #     # Start q on port 5000 in the background with authentication
+    #     nohup ./l64/q -p 5000 -u $HOME/.kdb/passwd > q.log 2>&1 &
+    #     echo $! > q.pid
         
-        # Wait for q to be ready
-        sleep 5
+    #     # Wait for q to be ready
+    #     sleep 5
         
-        # Check if q is running
-        if ! kill -0 $(cat q.pid) 2>/dev/null; then
-          echo "Failed to start q"
-          cat q.log
-          exit 1
-        fi
+    #     # Check if q is running
+    #     if ! kill -0 $(cat q.pid) 2>/dev/null; then
+    #       echo "Failed to start q"
+    #       cat q.log
+    #       exit 1
+    #     fi
         
-        echo "kdb+ server started on port 5000"
+    #     echo "kdb+ server started on port 5000"
+
+    - name: Run unit tests (kdb_codec)
+      run: cargo test --package kdb_codec --lib --tests --verbose
+      env:
+        RUST_BACKTRACE: 1
 
     - name: Run IPC tests
       run: cargo test --package kdbplus --features ipc --verbose
       env:
         RUST_BACKTRACE: 1
 
-    - name: Build API examples
-      run: cargo build --package api_examples --verbose
-      continue-on-error: true
+    
+    # Uncomment the following section to run integration tests that require kdb+
+    # - name: Run kdb+ integration tests
+    #   run: cargo test --package kdb_codec --tests -- --ignored --nocapture
+    #   env:
+    #     RUST_BACKTRACE: 1
 
-    - name: Stop kdb+ server
-      if: always()
-      run: |
-        if [ -f $HOME/q/q/q.pid ]; then
-          kill $(cat $HOME/q/q/q.pid) || true
-        fi
+    # - name: Stop kdb+ server
+    #   if: always()
+    #   run: |
+    #     if [ -f $HOME/q/q/q.pid ]; then
+    #       kill $(cat $HOME/q/q/q.pid) || true
+    #     fi
