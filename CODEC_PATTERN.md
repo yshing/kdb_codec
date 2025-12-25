@@ -214,22 +214,40 @@ Bytes 4-7: Total message length (including header)
 
 ## Codec Implementation Details
 
+### Shared Compression Functions
+
+The codec module provides public `compress_sync` and `decompress_sync` functions that implement the kdb+ IPC compression algorithm. These functions are:
+- Used internally by the `KdbCodec` for encoding/decoding
+- Also used by the traditional `QStream` API to avoid code duplication
+- Fully compatible with kdb+ `-18!` (compress) and `-19!` (decompress) functions
+- Implemented as synchronous functions for optimal performance in the codec pattern
+
 ### Encoding
 
 The `Encoder` trait implementation:
 - Serializes K objects using the existing `q_ipc_encode()` method
 - Constructs the appropriate message header
-- Handles compression for messages > 2000 bytes (when not local)
+- **Handles compression for messages > 2000 bytes (when not local)**
 - Writes the complete message to the output buffer
+
+**Compression Logic:**
+- Messages larger than 2000 bytes and on non-local connections are automatically compressed
+- The codec uses synchronous compression for efficiency within the codec pattern
+- If compression doesn't reduce size to less than half, the original uncompressed message is sent
 
 ### Decoding
 
 The `Decoder` trait implementation:
 - Reads and parses the 8-byte header
 - Waits for complete message arrival
-- Handles decompression if needed
+- **Handles decompression automatically when the compressed flag is set**
 - Deserializes the payload using synchronous deserialization
 - Returns a `KdbResponse` with message type and K object
+
+**Decompression Logic:**
+- Automatically detects compressed messages via the header flag
+- Uses synchronous decompression for efficient processing
+- Fully compatible with kdb+ compression format (-18!/-19!)
 
 ## Migration from QStream
 
@@ -253,7 +271,7 @@ let result = framed.next().await.unwrap()?.payload;
 
 Potential improvements to the codec implementation:
 
-1. **Compression Support**: Full async compression/decompression in codec
+1. ~~**Compression Support**: Full async compression/decompression in codec~~ ✅ **Implemented**
 2. **Connection Pooling**: Codec-based connection pool
 3. **Metrics Codec**: Wrapper codec for automatic metrics collection
 4. **Retry Logic**: Codec wrapper for automatic retry on failure

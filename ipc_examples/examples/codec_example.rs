@@ -3,6 +3,7 @@
 //! This example shows how to use the KdbCodec with tokio's Framed to
 //! communicate with a kdb+ process using a cleaner, more idiomatic approach.
 
+use kdbplus::ipc::error::Error;
 use kdbplus::ipc::*;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -14,25 +15,27 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
 
-    // Create a framed stream with our KdbCodec
-    let codec = KdbCodec::new(true); // true = local connection
-    let mut framed = Framed::new(stream, codec);
-
     println!("Connected using kdb-codec pattern!");
 
-    // Example 1: Send a simple string query
     use futures::sink::SinkExt;
     use futures::stream::StreamExt;
 
-    // Send a synchronous text query
-    // Note: Using feed() + flush() is cancellation-safe, unlike send()
-    // which can lose the message if used in tokio::select! and another branch completes first
+    // Create codec and framed stream
+    let codec = KdbCodec::new(true); // true = local connection
+    let mut framed = Framed::new(stream, codec);
+
+    // Example 1: Send a simple query using KdbMessage
+    let query1 = KdbMessage::new(
+        qmsg_type::synchronous,
+        K::new_compound_list(vec![
+            K::new_symbol(String::from("+")),
+            K::new_long(1),
+            K::new_long(1),
+        ]),
+    );
+
     framed
-        .feed(("1+1", qmsg_type::synchronous))
-        .await
-        .map_err(|e| Error::NetworkError(e.to_string()))?;
-    framed
-        .flush()
+        .send(query1)
         .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
 
@@ -48,8 +51,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Example 2: Send a K object query
-    let query = KdbMessage::new(
+    // Example 2: Send another K object query
+    let query2 = KdbMessage::new(
         qmsg_type::synchronous,
         K::new_compound_list(vec![
             K::new_symbol(String::from("til")),
@@ -57,13 +60,8 @@ async fn main() -> Result<()> {
         ]),
     );
 
-    // Using feed() + flush() for cancellation safety
     framed
-        .feed(query)
-        .await
-        .map_err(|e| Error::NetworkError(e.to_string()))?;
-    framed
-        .flush()
+        .send(query2)
         .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
 
