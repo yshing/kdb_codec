@@ -141,15 +141,6 @@ impl KdbMessage {
     }
 }
 
-/// Response from decoder including message type and K object
-#[derive(Debug)]
-pub struct KdbResponse {
-    /// The message type
-    pub message_type: u8,
-    /// The K object payload
-    pub payload: K,
-}
-
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Encoder Implementation
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
@@ -217,7 +208,7 @@ impl Encoder<KdbMessage> for KdbCodec {
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
 impl Decoder for KdbCodec {
-    type Item = KdbResponse;
+    type Item = KdbMessage;
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<Self::Item>> {
@@ -257,7 +248,7 @@ impl Decoder for KdbCodec {
         // Deserialize the K object
         let k_object = q_ipc_decode_sync(&decoded_payload, header.encoding);
 
-        Ok(Some(KdbResponse {
+        Ok(Some(KdbMessage {
             message_type: header.message_type,
             payload: k_object,
         }))
