@@ -1,19 +1,38 @@
-//! As Rust is becoming a popular programming language for its performance and type safety, the desire to use
-//!  it with still a maniac time-series database kdb+ is brewing. The aspiration is understandable since we know
-//!  kdb+ is fast and its interface or a shared library should be fast as well. This interface was created to
-//!  satisfy such a natural demand, furthermore, in a manner users do not feel any pain to use. The notrious
-//!  ethoteric function names of the q/kdb+ C API is not an interest of Rust developers.
+//! # kdb_codec - Kdb+ IPC Codec Library
 //!
-//! *"Give us a **Rust** interface!!"*
+//! This library provides a codec for handling the kdb+ IPC (Inter-Process Communication) wire protocol.
+//! It focuses on encoding and decoding kdb+ data types for communication with q/kdb+ processes.
 //!
-//! Here is your choice.
+//! ## Features
 //!
-//! This interface provides two features:
+//! - **IPC Codec**: Tokio-based codec implementation for kdb+ IPC protocol
+//! - **QStream**: High-level async client for connecting to q/kdb+ processes  
+//! - **Compression**: Full support for kdb+ compression/decompression (-18!/-19!)
+//! - **Type Safety**: Strong typing for kdb+ data types
+//! - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 //!
-//! - IPC interface (Rust client of q/kdb+ process)
-//! - API (build a shared library for q/kdb+)
+//! ## Usage
 //!
-//! You can find detail descriptions of each feature under corresponding module page.
+//! ```no_run
+//! use kdb_codec::ipc::*;
+//! use tokio::net::TcpStream;
+//! use tokio_util::codec::Framed;
+//! use futures::{SinkExt, StreamExt};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<()> {
+//!     let stream = TcpStream::connect("127.0.0.1:5000").await?;
+//!     let mut framed = Framed::new(stream, KdbCodec::new(true));
+//!     
+//!     framed.feed(("1+1", qmsg_type::synchronous)).await?;
+//!     framed.flush().await?;
+//!     
+//!     if let Some(Ok(response)) = framed.next().await {
+//!         println!("Result: {}", response.payload);
+//!     }
+//!     Ok(())
+//! }
+//! ```
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Global Variables
@@ -402,8 +421,4 @@ pub mod qninf_base {
 // >> Export Modules
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
-#[cfg(feature = "api")]
-pub mod api;
-
-#[cfg(feature = "ipc")]
 pub mod ipc;

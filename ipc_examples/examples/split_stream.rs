@@ -4,7 +4,7 @@
 //! separate read and write halves, eliminating the need for tokio::select!
 
 use futures::{SinkExt, StreamExt};
-use kdbplus::ipc::*;
+use kdb_codec::ipc::*;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;

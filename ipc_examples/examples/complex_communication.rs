@@ -1,4 +1,4 @@
-use kdbplus::ipc::*;
+use kdb_codec::ipc::*;
 
 // Print `K` object.
 fn print(obj: &K) {

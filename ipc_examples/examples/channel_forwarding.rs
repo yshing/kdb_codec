@@ -4,7 +4,7 @@
 //! to a kdb+ process without losing or duplicating messages.
 
 use futures::{SinkExt, StreamExt};
-use kdbplus::ipc::*;
+use kdb_codec::ipc::*;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;

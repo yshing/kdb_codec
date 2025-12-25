@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use chrono::Duration;
-use kdbplus::ipc::*;
-use kdbplus::qattribute;
+use kdb_codec::ipc::*;
+use kdb_codec::qattribute;
 
 fn main() {
     let boolean = K::new_bool(true);

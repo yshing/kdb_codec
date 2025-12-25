@@ -1,5 +1,5 @@
-use kdbplus::ipc::*;
-use kdbplus::qattribute;
+use kdb_codec::ipc::*;
+use kdb_codec::qattribute;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> Result<()> {
