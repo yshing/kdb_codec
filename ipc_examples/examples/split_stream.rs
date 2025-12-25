@@ -4,7 +4,7 @@
 //! separate read and write halves, eliminating the need for tokio::select!
 
 use futures::{SinkExt, StreamExt};
-use kdb_codec::ipc::*;
+use kdb_codec::*;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
@@ -205,7 +205,7 @@ async fn forward_with_select(
                     Some(msg) => {
                         framed.feed(msg).await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
-                        framed.flush().await
+                        SinkExt::<KdbMessage>::flush(&mut framed).await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
 
                         messages_sent += 1;

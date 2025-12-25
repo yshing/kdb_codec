@@ -3,8 +3,8 @@
 //! This example shows how to use the KdbCodec with tokio's Framed to
 //! communicate with a kdb+ process using a cleaner, more idiomatic approach.
 
-use kdb_codec::ipc::error::Error;
-use kdb_codec::ipc::*;
+use kdb_codec::error::Error;
+use kdb_codec::*;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 

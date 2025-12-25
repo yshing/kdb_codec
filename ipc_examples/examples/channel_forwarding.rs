@@ -4,7 +4,7 @@
 //! to a kdb+ process without losing or duplicating messages.
 
 use futures::{SinkExt, StreamExt};
-use kdb_codec::ipc::*;
+use kdb_codec::*;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
@@ -81,8 +81,7 @@ async fn forward_messages_safely(
                         
                         // Step 2: flush() sends all buffered messages
                         // After this point, the message is guaranteed sent
-                        framed
-                            .flush()
+                        SinkExt::<KdbMessage>::flush(&mut framed)
                             .await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
                         
@@ -138,7 +137,7 @@ async fn unsafe_batching_example(
     }
     
     // All buffered messages sent here
-    framed.flush().await
+    SinkExt::<KdbMessage>::flush(&mut framed).await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
     
     Ok(())
@@ -164,7 +163,7 @@ async fn safe_batching_example(
                     
                     // Flush after reaching batch size
                     if batch_count >= BATCH_SIZE {
-                        framed.flush().await
+                        SinkExt::<KdbMessage>::flush(&mut framed).await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
                         println!("Flushed batch of {} messages", batch_count);
                         batch_count = 0;
@@ -172,7 +171,7 @@ async fn safe_batching_example(
                 } else {
                     // Channel closed - flush any remaining messages
                     if batch_count > 0 {
-                        framed.flush().await
+                        SinkExt::<KdbMessage>::flush(&mut framed).await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
                         println!("Flushed final batch of {} messages", batch_count);
                     }

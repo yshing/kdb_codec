@@ -533,7 +533,7 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipc::{qattribute, qmsg_type};
+    use crate::{qattribute, qmsg_type};
 
     #[test]
     fn test_compress_decompress_roundtrip() {

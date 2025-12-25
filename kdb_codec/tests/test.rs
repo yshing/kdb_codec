@@ -7,8 +7,7 @@ extern crate float_cmp;
 
 use chrono::prelude::*;
 use chrono::Duration;
-use kdb_codec::ipc::error::Error;
-use kdb_codec::ipc::*;
+use kdb_codec::error::Error;
 use kdb_codec::*;
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++//
