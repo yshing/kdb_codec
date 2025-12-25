@@ -268,6 +268,39 @@ pub fn io_error_to_kdb_error(err: io::Error) -> Error {
 /// the same output as shown in the q language by using the -18! function e.g.
 /// serializing 2000 bools set to true, then compressing, will have the same output as `-18!2000#1b`.
 /// 
+/// # Data Format Flow
+/// 
+/// **Input (`raw`):**
+/// ```text
+/// [Header: 8 bytes][Payload: N bytes]
+///  ├─ byte 0: encoding (0=BE, 1=LE)
+///  ├─ byte 1: message_type (0=async, 1=sync, 2=response)
+///  ├─ byte 2: compressed (always 0 in input)
+///  ├─ byte 3: reserved
+///  └─ bytes 4-7: length (placeholder, not used)
+/// ```
+/// 
+/// **Output (when compressed successfully):**
+/// ```text
+/// [Header: 8 bytes][Uncompressed Size: 4 bytes][Compressed Payload]
+///  ├─ byte 0: encoding (copied from input)
+///  ├─ byte 1: message_type (copied from input)
+///  ├─ byte 2: compressed (set to 1)
+///  ├─ byte 3: reserved (copied from input)
+///  ├─ bytes 4-7: total compressed message size (including this 8-byte header)
+///  ├─ bytes 8-11: original uncompressed size (including original 8-byte header)
+///  └─ bytes 12+: compressed payload data
+/// ```
+/// 
+/// **Output (when compression fails - compressed size >= half of original):**
+/// Returns `(false, original_raw_with_corrected_length)` where bytes 4-7 contain the actual total size.
+/// 
+/// # Usage in Encoder/Decoder
+/// 
+/// **Encoder:** Creates `raw` and calls this function. If compression succeeds, writes entire output to network.
+/// 
+/// **Decoder:** Reads from network, parses header (bytes 0-7), then passes bytes 8+ to `decompress_sync()`.
+/// 
 /// # Parameters
 /// - `raw`: Serialized message (including header).
 /// 
@@ -378,8 +411,33 @@ pub fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
 /// Decompress body synchronously. The combination of decompressing and deserializing the data
 /// will result in the same output as shown in the q language by using the `-19!` function.
 /// 
+/// # Data Format Flow
+/// 
+/// **Input (`compressed`):**
+/// ```text
+/// [Uncompressed Size: 4 bytes][Compressed Payload]
+///  ├─ bytes 0-3: original uncompressed size (including the original 8-byte header that was removed)
+///  └─ bytes 4+: compressed payload data
+/// ```
+/// 
+/// **Output:**
+/// ```text
+/// [Decompressed Payload: N bytes]
+/// (The original 8-byte header is NOT included in the output)
+/// ```
+/// 
+/// # Usage in Decoder
+/// 
+/// The Decoder:
+/// 1. Reads complete message from network: `[Header: 8 bytes][Uncompressed Size: 4 bytes][Compressed Payload]`
+/// 2. Parses and validates the header (bytes 0-7)
+/// 3. Extracts payload data starting from byte 8: `[Uncompressed Size: 4 bytes][Compressed Payload]`
+/// 4. Passes this payload data to `decompress_sync()`
+/// 5. Receives decompressed payload (without header)
+/// 6. Deserializes the payload into a K object
+/// 
 /// # Parameters
-/// - `compressed`: Compressed serialized message (header already removed, starts with uncompressed size).
+/// - `compressed`: Compressed serialized message (**header already removed**, starts with uncompressed size).
 /// - `encoding`:
 ///   - `0`: Big Endian
 ///   - `1`: Little Endian.
@@ -601,5 +659,116 @@ mod tests {
         assert_eq!(parsed.message_type, header.message_type);
         assert_eq!(parsed.compressed, header.compressed);
         assert_eq!(parsed.length, header.length);
+    }
+
+    #[test]
+    fn test_compress_decompress_direct() {
+        // Test compress_sync and decompress_sync directly to validate the data format
+        // Use large enough data to trigger compression
+        
+        // Create a raw message: header + payload (large enough to compress)
+        let payload = vec![42u8; 2000]; // Repetitive data compresses well
+        let mut raw = Vec::new();
+        // Header: encoding, message_type, compressed=0, reserved, length (placeholder)
+        raw.extend_from_slice(&[ENCODING, 1, 0, 0, 0, 0, 0, 0]);
+        raw.extend_from_slice(&payload);
+        
+        let original_size = raw.len();
+        
+        // Compress it
+        let (was_compressed, compressed_data) = compress_sync(raw.clone());
+        
+        println!("Original size: {}", original_size);
+        println!("Compressed data size: {}", compressed_data.len());
+        println!("Was compressed: {}", was_compressed);
+        
+        // Should be compressed (repetitive data compresses well)
+        assert!(was_compressed, "Large repetitive data should compress");
+        
+        // Verify compressed format
+        // Bytes 0-3: encoding, message_type, compressed=1, reserved
+        assert_eq!(compressed_data[0], ENCODING);
+        assert_eq!(compressed_data[1], 1); // message type
+        assert_eq!(compressed_data[2], 1); // compressed flag
+        
+        // Bytes 4-7: total compressed size (including header)
+        let compressed_size = match ENCODING {
+            0 => u32::from_be_bytes([compressed_data[4], compressed_data[5], compressed_data[6], compressed_data[7]]),
+            _ => u32::from_le_bytes([compressed_data[4], compressed_data[5], compressed_data[6], compressed_data[7]]),
+        };
+        assert_eq!(compressed_size as usize, compressed_data.len());
+        
+        // Bytes 8-11: original uncompressed size (including header)
+        let uncompressed_size = match ENCODING {
+            0 => u32::from_be_bytes([compressed_data[8], compressed_data[9], compressed_data[10], compressed_data[11]]),
+            _ => u32::from_le_bytes([compressed_data[8], compressed_data[9], compressed_data[10], compressed_data[11]]),
+        };
+        assert_eq!(uncompressed_size as usize, original_size);
+        
+        // Now decompress - skip header (bytes 0-7) to simulate what Decoder does
+        // This is the KEY insight: Decoder removes the header before calling decompress_sync
+        let payload_data = &compressed_data[HEADER_SIZE..];
+        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
+        
+        // The decompressed data should match the original payload (without header)
+        assert_eq!(decompressed, payload, "Decompressed payload should match original");
+    }
+
+    #[test]
+    fn test_compression_with_large_data() {
+        // Test with data large enough to trigger compression
+        let large_payload = vec![42u8; 3000];
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&[ENCODING, 1, 0, 0, 0, 0, 0, 0]);
+        raw.extend_from_slice(&large_payload);
+        
+        let original_size = raw.len();
+        
+        // Compress
+        let (was_compressed, compressed_data) = compress_sync(raw);
+        
+        // Should be compressed (large data with repetition compresses well)
+        assert!(was_compressed, "Large repetitive data should compress");
+        
+        // Compressed size should be less than original
+        assert!(compressed_data.len() < original_size, 
+            "Compressed size {} should be less than original size {}", 
+            compressed_data.len(), original_size);
+        
+        // Decompress - skip the header as Decoder does
+        let payload_data = &compressed_data[HEADER_SIZE..];
+        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
+        
+        // Should match original payload
+        assert_eq!(decompressed, large_payload);
+    }
+
+    #[test]
+    fn test_codec_with_compression_end_to_end() {
+        // Full end-to-end test through the codec
+        let large_list = K::new_long_list(vec![123; 2500], qattribute::NONE);
+        let message = KdbMessage::new(qmsg_type::synchronous, large_list.clone());
+        
+        // Encode (should compress for non-local connection)
+        let mut codec = KdbCodec::new(false);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+        
+        // Verify compression flag is set
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 1, "Large message should be compressed");
+        
+        // Decode
+        let decoded = codec.decode(&mut buffer).unwrap();
+        assert!(decoded.is_some());
+        
+        let response = decoded.unwrap();
+        assert_eq!(response.message_type, qmsg_type::synchronous);
+        
+        // Verify payload matches
+        let decoded_list = response.payload.as_vec::<i64>().unwrap();
+        assert_eq!(decoded_list.len(), 2500);
+        assert_eq!(decoded_list[0], 123);
+        assert_eq!(decoded_list[2499], 123);
     }
 }
