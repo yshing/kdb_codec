@@ -165,7 +165,6 @@ pub enum ConnectionMethod {
 //%% Query %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
 /// Feature of query object.
-#[async_trait]
 pub trait Query: Send + Sync {
     /// Serialize into q IPC bytes including a header (encoding, message type, compresssion flag and total message length).
     ///  If the connection is within the same host, the message is not compressed under any conditions.
@@ -175,7 +174,7 @@ pub trait Query: Send + Sync {
     ///   - `qmsg_type::synchronous`
     ///   - `qmsg_type::response`
     /// - `is_local`: Flag of whether the connection is within the same host.
-    async fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8>;
+    fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8>;
 }
 
 //%% QStreamInner %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
@@ -267,9 +266,8 @@ struct MessageHeader {
 //%% Query %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
 /// Text query.
-#[async_trait]
 impl Query for &str {
-    async fn serialize(&self, message_type: u8, _: bool) -> Vec<u8> {
+    fn serialize(&self, message_type: u8, _: bool) -> Vec<u8> {
         //  Build header //--------------------------------/
         // Message header + (type indicator of string + header of string type) + string length
         let byte_message = self.as_bytes();
@@ -307,9 +305,8 @@ impl Query for &str {
 }
 
 /// Functional query.
-#[async_trait]
 impl Query for K {
-    async fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8> {
+    fn serialize(&self, message_type: u8, is_local: bool) -> Vec<u8> {
         //  Build header //--------------------------------/
         // Message header + encoded data size
         let mut byte_message = self.q_ipc_encode();
@@ -677,7 +674,7 @@ impl QStreamInner for TcpStream {
         is_local: bool,
     ) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(message_type, is_local).await;
+        let byte_message = message.serialize(message_type, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -685,7 +682,7 @@ impl QStreamInner for TcpStream {
 
     async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -693,7 +690,7 @@ impl QStreamInner for TcpStream {
 
     async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
@@ -735,7 +732,7 @@ impl QStreamInner for TlsStream<TcpStream> {
         is_local: bool,
     ) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(message_type, is_local).await;
+        let byte_message = message.serialize(message_type, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -743,7 +740,7 @@ impl QStreamInner for TlsStream<TcpStream> {
 
     async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -751,7 +748,7 @@ impl QStreamInner for TlsStream<TcpStream> {
 
     async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
@@ -787,7 +784,7 @@ impl QStreamInner for UnixStream {
         is_local: bool,
     ) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(message_type, is_local).await;
+        let byte_message = message.serialize(message_type, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -795,7 +792,7 @@ impl QStreamInner for UnixStream {
 
     async fn send_async_message(&mut self, message: &dyn Query, is_local: bool) -> Result<()> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::asynchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::asynchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         Ok(())
@@ -803,7 +800,7 @@ impl QStreamInner for UnixStream {
 
     async fn send_sync_message(&mut self, message: &dyn Query, is_local: bool) -> Result<K> {
         // Serialize a message
-        let byte_message = message.serialize(qmsg_type::synchronous, is_local).await;
+        let byte_message = message.serialize(qmsg_type::synchronous, is_local);
         // Send the message
         write_all_cancellation_safe(self, &byte_message).await?;
         // Receive a response. If message type is not response it returns an error.
