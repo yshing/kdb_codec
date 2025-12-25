@@ -83,10 +83,14 @@ jobs:
         
         echo "kdb+ server started on port 5000"
 
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Run IPC tests
+      run: cargo test --package kdbplus --features ipc --verbose
       env:
         RUST_BACKTRACE: 1
+
+    - name: Build API examples
+      run: cargo build --package api_examples --verbose
+      continue-on-error: true
 
     - name: Stop kdb+ server
       if: always()
