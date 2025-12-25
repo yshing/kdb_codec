@@ -488,14 +488,14 @@ impl QStream {
         let kdb_message = message.to_kdb_message(message_type);
         match &mut self.stream {
             FramedStream::Tcp(framed) => {
-                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+                framed.send(kdb_message).await?;
             }
             FramedStream::Tls(framed) => {
-                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+                framed.send(kdb_message).await?;
             }
             #[cfg(unix)]
             FramedStream::Uds(framed) => {
-                SinkExt::<KdbMessage>::send(framed, kdb_message).await?;
+                framed.send(kdb_message).await?;
             }
         }
         Ok(())

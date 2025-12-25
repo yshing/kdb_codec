@@ -212,47 +212,7 @@ impl Encoder<KdbMessage> for KdbCodec {
     }
 }
 
-/// Special encoder for string messages (text queries)
-impl Encoder<(&str, u8)> for KdbCodec {
-    type Error = io::Error;
-
-    fn encode(&mut self, item: (&str, u8), dst: &mut BytesMut) -> io::Result<()> {
-        let (text, message_type) = item;
-        let byte_message = text.as_bytes();
-        let message_length = byte_message.len() as u32;
-        // Header + string type indicator (1) + attribute (1) + length (4) + message
-        let total_length = HEADER_SIZE as u32 + 6 + message_length;
-
-        let header = MessageHeader {
-            encoding: ENCODING,
-            message_type,
-            compressed: 0,
-            _unused: 0,
-            length: total_length,
-        };
-
-        dst.reserve(total_length as usize);
-        dst.put_slice(&header.to_bytes());
-
-        // String type and attribute
-        dst.put_u8(qtype::STRING as u8);
-        dst.put_u8(0); // attribute
-
-        // Length of string
-        let length_bytes = match ENCODING {
-            0 => message_length.to_be_bytes(),
-            _ => message_length.to_le_bytes(),
-        };
-        dst.put_slice(&length_bytes);
-
-        // String content
-        dst.put_slice(byte_message);
-
-        Ok(())
-    }
-}
-
-//++++++++++++++++++++++++++++++++++++++++++++++++++//
+//+++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Decoder Implementation
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
@@ -615,10 +575,12 @@ mod tests {
         let mut codec = KdbCodec::new(true);
         let mut buffer = BytesMut::new();
 
-        // Encode a simple string query
-        codec
-            .encode(("1+1", qmsg_type::synchronous), &mut buffer)
-            .unwrap();
+        // Create a KdbMessage with a string query
+        let query = K::new_string("1+1".to_string(), 0);
+        let message = KdbMessage::new(qmsg_type::synchronous, query);
+
+        // Encode the message
+        codec.encode(message, &mut buffer).unwrap();
 
         // Check that we have a valid message
         assert!(buffer.len() > HEADER_SIZE);
