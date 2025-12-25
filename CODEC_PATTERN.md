@@ -28,7 +28,7 @@ The kdb-codec implementation provides a clean, idiomatic Rust interface for kdb+
 ### Basic Example
 
 ```rust
-use kdbplus::ipc::*;
+use kdb_codec::ipc::*;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use futures::{SinkExt, StreamExt};

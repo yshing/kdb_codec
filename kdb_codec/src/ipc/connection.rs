@@ -37,7 +37,7 @@ pub mod qmsg_type {
     //!
     //! # Example
     //! ```no_run
-    //! use kdbplus::ipc::*;
+    //! use kdb_codec::ipc::*;
     //!
     //! // Print `K` object.
     //! fn print(obj: &K) {
@@ -379,8 +379,8 @@ impl QStream {
     /// - `credential`: Credential in the form of `username:password` to connect to the target q process.
     /// # Example
     /// ```
-    /// use kdbplus::qattribute;
-    /// use kdbplus::ipc::*;
+    /// use kdb_codec::qattribute;
+    /// use kdb_codec::ipc::*;
     ///
     /// #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
     /// async fn main() -> Result<()> {
@@ -466,7 +466,7 @@ impl QStream {
     /// - port: Listening port.
     /// # Example
     /// ```no_run
-    /// use kdbplus::ipc::*;
+    /// use kdb_codec::ipc::*;
     ///  
     /// #[tokio::main]
     /// async fn main() -> Result<()> {

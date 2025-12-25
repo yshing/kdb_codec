@@ -176,8 +176,7 @@ pub mod qnull_base {
     /// Null value of GUID.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn guid_border(_: K) -> K{
@@ -194,8 +193,7 @@ pub mod qnull_base {
     /// Null value of short.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn short_borders(_: K) -> K{
@@ -217,8 +215,7 @@ pub mod qnull_base {
     /// Null value of int family, i.e., int, month, date, minute, second and time.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn int_borders(_: K) -> K{
@@ -240,8 +237,7 @@ pub mod qnull_base {
     /// Null value of long family, i.e., long, timestamp and timespan.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn long_borders(_: K) -> K{
@@ -263,8 +259,7 @@ pub mod qnull_base {
     /// Null value of real.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn real_borders(_: K) -> K{
@@ -286,8 +281,7 @@ pub mod qnull_base {
     /// Null value of float family, i.e., float and datetime.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn float_borders(_: K) -> K{
@@ -309,8 +303,7 @@ pub mod qnull_base {
     /// Null value of char.
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn char_border(_: K) -> K{
@@ -329,8 +322,7 @@ pub mod qnull_base {
     /// Null value of string family (symbol, string).
     /// # Example
     /// ```no_run
-    /// use kdbplus::*;
-    /// use kdbplus::api::*;
+    /// use kdb_codec::*;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn string_borders(_: K) -> K{
