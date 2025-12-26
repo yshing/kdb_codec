@@ -90,6 +90,46 @@ async fn main() -> Result<()> {
 }
 ```
 
+### Compression Control
+
+The codec provides explicit control over compression behavior:
+
+```rust
+use kdb_codec::*;
+
+// Auto mode (default): compress large messages on remote connections only
+let codec = KdbCodec::new(false);
+
+// Always compress (if beneficial): compress large messages even on local connections
+let codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
+
+// Never compress: disable compression entirely
+let codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+```
+
+**Compression Modes:**
+- `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
+- `Always`: Attempt to compress large messages even on local connections
+- `Never`: Disable compression entirely
+
+### Header Validation
+
+The codec validates incoming message headers to detect protocol violations:
+
+```rust
+use kdb_codec::*;
+
+// Strict mode (default): reject invalid headers
+let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+
+// Lenient mode: accept non-standard header values (for debugging/compatibility)
+let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Lenient);
+```
+
+**Validation Modes:**
+- `Strict` (default): Validates that compressed flag is 0 or 1, and message type is 0, 1, or 2
+- `Lenient`: Accepts any header values (useful for debugging or handling non-standard implementations)
+
 ### QStream - High-Level Client
 
 For a more convenient API, use `QStream` which wraps the codec:
@@ -107,6 +147,30 @@ async fn main() -> Result<()> {
     ).await?;
     
     // All operations are cancellation safe
+    let result = stream.send_sync_message(&"2+2").await?;
+    println!("Result: {}", result.get_int()?);
+    
+    Ok(())
+}
+```
+
+**With Explicit Options:**
+
+```rust
+use kdb_codec::*;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Connect with always compress and lenient validation
+    let mut stream = QStream::connect_with_options(
+        ConnectionMethod::TCP, 
+        "localhost", 
+        5000, 
+        "user:pass",
+        CompressionMode::Always,
+        ValidationMode::Lenient
+    ).await?;
+    
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);
     
