@@ -100,7 +100,7 @@ use kdb_codec::*;
 // Auto mode (default): compress large messages on remote connections only
 let codec = KdbCodec::new(false);
 
-// Always compress (if beneficial): compress large messages even on local connections
+// Always compress: compress messages larger than 2000 bytes even on local connections
 let codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
 
 // Never compress: disable compression entirely
@@ -109,7 +109,7 @@ let codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode
 
 **Compression Modes:**
 - `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
-- `Always`: Attempt to compress large messages even on local connections
+- `Always`: Attempt to compress messages larger than 2000 bytes even on local connections
 - `Never`: Disable compression entirely
 
 ### Header Validation

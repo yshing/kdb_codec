@@ -37,7 +37,7 @@ pub enum CompressionMode {
     /// - Local connections: no compression
     /// - Remote connections: compress if message > 2000 bytes
     Auto,
-    /// Always attempt to compress messages (respects kdb+ compression rules)
+    /// Always attempt to compress messages larger than 2000 bytes (respects kdb+ compression algorithm)
     Always,
     /// Never compress messages
     Never,
