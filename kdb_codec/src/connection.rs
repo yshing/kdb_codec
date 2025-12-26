@@ -7,7 +7,7 @@
 // >> Load Libraries
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
-use super::codec::{KdbCodec, KdbMessage};
+use super::codec::{CompressionMode, KdbCodec, KdbMessage, ValidationMode};
 use super::Result;
 use super::K;
 use futures::{SinkExt, StreamExt};
@@ -273,11 +273,63 @@ impl QStream {
         port: u16,
         credential: &str,
     ) -> Result<Self> {
+        Self::connect_with_options(
+            method,
+            host,
+            port,
+            credential,
+            CompressionMode::Auto,
+            ValidationMode::Strict,
+        )
+        .await
+    }
+
+    /// Connect to q/kdb+ with explicit compression and validation options
+    ///
+    /// # Parameters
+    /// - `method`: Connection method (TCP, TLS, or UDS)
+    /// - `host`: Hostname or IP address of the target q process. Empty `str` for Unix domain socket.
+    /// - `port`: Port of the target q process.
+    /// - `credential`: Credential in the form of `username:password` to connect to the target q process.
+    /// - `compression_mode`: How to handle message compression
+    /// - `validation_mode`: How strictly to validate incoming messages
+    ///
+    /// # Example
+    /// ```no_run
+    /// use kdb_codec::*;
+    ///
+    /// #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+    /// async fn main() -> Result<()> {
+    ///     // Connect with always compress and lenient validation
+    ///     let mut socket = QStream::connect_with_options(
+    ///         ConnectionMethod::TCP,
+    ///         "localhost",
+    ///         5000,
+    ///         "user:pass",
+    ///         CompressionMode::Always,
+    ///         ValidationMode::Lenient
+    ///     ).await?;
+    ///
+    ///     let result = socket.send_sync_message(&"2+2").await?;
+    ///     println!("Result: {}", result.get_int()?);
+    ///
+    ///     socket.shutdown().await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn connect_with_options(
+        method: ConnectionMethod,
+        host: &str,
+        port: u16,
+        credential: &str,
+        compression_mode: CompressionMode,
+        validation_mode: ValidationMode,
+    ) -> Result<Self> {
         match method {
             ConnectionMethod::TCP => {
                 let stream = connect_tcp(host, port, credential).await?;
                 let is_local = matches!(host, "localhost" | "127.0.0.1");
-                let codec = KdbCodec::new(is_local);
+                let codec = KdbCodec::with_options(is_local, compression_mode, validation_mode);
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Tcp(framed),
@@ -287,7 +339,7 @@ impl QStream {
             }
             ConnectionMethod::TLS => {
                 let stream = connect_tls(host, port, credential).await?;
-                let codec = KdbCodec::new(false); // TLS is always remote
+                let codec = KdbCodec::with_options(false, compression_mode, validation_mode); // TLS is always remote
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Tls(framed),
@@ -297,7 +349,7 @@ impl QStream {
             }
             ConnectionMethod::UDS => {
                 let stream = connect_uds(port, credential).await?;
-                let codec = KdbCodec::new(true); // UDS is always local
+                let codec = KdbCodec::with_options(true, compression_mode, validation_mode); // UDS is always local
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Uds(framed),
@@ -359,6 +411,54 @@ impl QStream {
     ///  the socket from the server side without crashing server side application.
     /// - TLS acceptor and UDS acceptor use specific environmental variables to work. See the [Environmental Variable](../ipc/index.html#environmentl-variables) section for details.
     pub async fn accept(method: ConnectionMethod, host: &str, port: u16) -> Result<Self> {
+        Self::accept_with_options(
+            method,
+            host,
+            port,
+            CompressionMode::Auto,
+            ValidationMode::Strict,
+        )
+        .await
+    }
+
+    /// Accept connection with explicit compression and validation options
+    ///
+    /// # Parameters
+    /// - `method`: Connection method (TCP, TLS, or UDS)
+    /// - `host`: Hostname or IP address of this listener. Empty `str` for Unix domain socket.
+    /// - `port`: Listening port.
+    /// - `compression_mode`: How to handle message compression
+    /// - `validation_mode`: How strictly to validate incoming messages
+    ///
+    /// # Example
+    /// ```no_run
+    /// use kdb_codec::*;
+    ///  
+    /// #[tokio::main]
+    /// async fn main() -> Result<()> {
+    ///     // Start listening with never compress and lenient validation
+    ///     let mut socket = QStream::accept_with_options(
+    ///         ConnectionMethod::TCP,
+    ///         "127.0.0.1",
+    ///         7000,
+    ///         CompressionMode::Never,
+    ///         ValidationMode::Lenient
+    ///     ).await?;
+    ///     
+    ///     let greeting = socket.send_sync_message(&"string `Hello").await?;
+    ///     println!("Greeting: {}", greeting);
+    ///     
+    ///     socket.shutdown().await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn accept_with_options(
+        method: ConnectionMethod,
+        host: &str,
+        port: u16,
+        compression_mode: CompressionMode,
+        validation_mode: ValidationMode,
+    ) -> Result<Self> {
         match method {
             ConnectionMethod::TCP => {
                 // Bind to the endpoint.
@@ -372,7 +472,7 @@ impl QStream {
                 }
                 // Check if the connection is local
                 let is_local = ip_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-                let codec = KdbCodec::new(is_local);
+                let codec = KdbCodec::with_options(is_local, compression_mode, validation_mode);
                 let framed = Framed::new(socket, codec);
                 Ok(QStream::new(
                     FramedStream::Tcp(framed),
@@ -404,7 +504,7 @@ impl QStream {
                         .expect("failed to accept TLS connection");
                 }
                 // TLS is always a remote connection
-                let codec = KdbCodec::new(false);
+                let codec = KdbCodec::with_options(false, compression_mode, validation_mode);
                 let framed = Framed::new(tls_socket, codec);
                 let mut qstream = QStream::new(
                     FramedStream::Tls(framed),
@@ -433,7 +533,7 @@ impl QStream {
                     socket = listener.accept().await?.0;
                 }
                 // UDS is always a local connection
-                let codec = KdbCodec::new(true);
+                let codec = KdbCodec::with_options(true, compression_mode, validation_mode);
                 let framed = Framed::new(socket, codec);
                 Ok(QStream::new(
                     FramedStream::Uds(framed),
