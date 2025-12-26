@@ -80,6 +80,7 @@ mod qconsts;
 mod qnull_inf;
 mod types;
 mod conversions;
+mod macros;
 
 // IPC modules
 mod codec;
