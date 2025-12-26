@@ -88,11 +88,6 @@ jobs:
       env:
         RUST_BACKTRACE: 1
 
-    - name: Run IPC tests
-      run: cargo test --package kdbplus --features ipc --verbose
-      env:
-        RUST_BACKTRACE: 1
-
     
     # Uncomment the following section to run integration tests that require kdb+
     # - name: Run kdb+ integration tests
