@@ -1,6 +1,6 @@
 # kdb_codec - Kdb+ IPC Codec Library
 
-[![Tests](https://github.com/yshing/kdbplus/actions/workflows/test.yml/badge.svg)](https://github.com/yshing/kdbplus/actions/workflows/test.yml)
+[![Tests](https://github.com/yshing/kdb_codec/actions/workflows/test.yml/badge.svg)](https://github.com/yshing/kdb_codec/actions/workflows/test.yml)
 
 A Rust library focused on handling the kdb+ IPC (Inter-Process Communication) wire protocol. This library provides efficient encoding, decoding, and communication with q/kdb+ processes using idiomatic Rust patterns.
 
