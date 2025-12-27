@@ -90,6 +90,52 @@ async fn main() -> Result<()> {
 }
 ```
 
+### Compression Control
+
+The codec provides explicit control over compression behavior:
+
+```rust
+use kdb_codec::*;
+
+// Auto mode (default): compress large messages on remote connections only
+let codec = KdbCodec::new(false);
+
+// Using with_options method
+let codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
+
+// Using builder pattern (recommended)
+let codec = KdbCodec::builder()
+    .is_local(false)
+    .compression_mode(CompressionMode::Never)
+    .validation_mode(ValidationMode::Strict)
+    .build();
+```
+
+**Compression Modes:**
+- `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
+- `Always`: Attempt to compress messages larger than 2000 bytes even on local connections
+- `Never`: Disable compression entirely
+
+### Header Validation
+
+The codec validates incoming message headers to detect protocol violations:
+
+```rust
+use kdb_codec::*;
+
+// Strict mode (default): reject invalid headers
+let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+
+// Using builder pattern
+let codec = KdbCodec::builder()
+    .validation_mode(ValidationMode::Lenient)
+    .build();
+```
+
+**Validation Modes:**
+- `Strict` (default): Validates that compressed flag is 0 or 1, and message type is 0, 1, or 2
+- `Lenient`: Accepts any header values (useful for debugging or handling non-standard implementations)
+
 ### QStream - High-Level Client
 
 For a more convenient API, use `QStream` which wraps the codec:
@@ -107,6 +153,55 @@ async fn main() -> Result<()> {
     ).await?;
     
     // All operations are cancellation safe
+    let result = stream.send_sync_message(&"2+2").await?;
+    println!("Result: {}", result.get_int()?);
+    
+    Ok(())
+}
+```
+
+**With Explicit Options:**
+
+```rust
+use kdb_codec::*;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Using connect_with_options method
+    let mut stream = QStream::connect_with_options(
+        ConnectionMethod::TCP, 
+        "localhost", 
+        5000, 
+        "user:pass",
+        CompressionMode::Always,
+        ValidationMode::Lenient
+    ).await?;
+    
+    let result = stream.send_sync_message(&"2+2").await?;
+    println!("Result: {}", result.get_int()?);
+    
+    Ok(())
+}
+```
+
+**Using Builder Pattern (recommended):**
+
+```rust
+use kdb_codec::*;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Using builder pattern for cleaner API
+    let mut stream = QStream::builder()
+        .method(ConnectionMethod::TCP)
+        .host("localhost")
+        .port(5000)
+        .credential("user:pass")
+        .compression_mode(CompressionMode::Always)
+        .validation_mode(ValidationMode::Lenient)
+        .connect()
+        .await?;
+    
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);
     

@@ -7,11 +7,14 @@
 //!
 //! - **IPC Codec**: Tokio-based codec implementation for kdb+ IPC protocol
 //! - **QStream**: High-level async client for connecting to q/kdb+ processes  
-//! - **Compression**: Full support for kdb+ compression/decompression (-18!/-19!)
+//! - **Compression Control**: Explicit control over compression behavior (Auto, Always, Never)
+//! - **Header Validation**: Configurable validation strictness for incoming messages
 //! - **Type Safety**: Strong typing for kdb+ data types
 //! - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 //!
 //! ## Usage
+//!
+//! ### Basic Example
 //!
 //! ```no_run
 //! use kdb_codec::*;
@@ -32,6 +35,39 @@
 //!     }
 //!     Ok(())
 //! }
+//! ```
+//!
+//! ### Compression Control
+//!
+//! ```no_run
+//! use kdb_codec::*;
+//!
+//! // Auto mode (default): compress large messages on remote connections only
+//! let codec = KdbCodec::new(false);
+//!
+//! // Using with_options method
+//! let codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
+//!
+//! // Using builder pattern (recommended)
+//! let codec = KdbCodec::builder()
+//!     .is_local(false)
+//!     .compression_mode(CompressionMode::Never)
+//!     .validation_mode(ValidationMode::Strict)
+//!     .build();
+//! ```
+//!
+//! ### Header Validation
+//!
+//! ```no_run
+//! use kdb_codec::*;
+//!
+//! // Strict mode (default): reject invalid headers
+//! let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+//!
+//! // Using builder pattern
+//! let codec = KdbCodec::builder()
+//!     .validation_mode(ValidationMode::Lenient)
+//!     .build();
 //! ```
 //!
 //! ## Type Mapping

@@ -27,6 +27,48 @@ const HEADER_SIZE: usize = 8;
 const COMPRESSION_THRESHOLD: usize = 2000;
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
+// >> Enums
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
+
+/// Compression behavior for encoding messages
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompressionMode {
+    /// Automatically compress based on message size and connection type (default behavior)
+    /// - Local connections: no compression
+    /// - Remote connections: compress if message > 2000 bytes
+    Auto,
+    /// Always attempt to compress messages larger than 2000 bytes (respects kdb+ compression algorithm)
+    Always,
+    /// Never compress messages
+    Never,
+}
+
+impl Default for CompressionMode {
+    fn default() -> Self {
+        CompressionMode::Auto
+    }
+}
+
+/// Validation strictness for decoding messages
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationMode {
+    /// Strict validation - reject invalid headers
+    /// - compressed flag must be 0 or 1
+    /// - message type must be 0, 1, or 2
+    Strict,
+    /// Lenient validation - accept potentially invalid headers
+    /// - allows any compressed flag value
+    /// - allows any message type value
+    Lenient,
+}
+
+impl Default for ValidationMode {
+    fn default() -> Self {
+        ValidationMode::Strict
+    }
+}
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Structs
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
@@ -108,17 +150,98 @@ impl MessageHeader {
 /// of K objects.
 #[derive(Debug, Clone)]
 pub struct KdbCodec {
-    /// Whether the connection is local (affects compression)
+    /// Whether the connection is local (affects compression in Auto mode)
     is_local: bool,
+    /// Compression mode for encoding
+    compression_mode: CompressionMode,
+    /// Validation mode for decoding
+    validation_mode: ValidationMode,
 }
 
+#[bon::bon]
 impl KdbCodec {
-    /// Create a new KdbCodec
+    /// Create a new KdbCodec with default settings (Auto compression, Strict validation)
     ///
     /// # Parameters
-    /// - `is_local`: Whether the connection is within the same host (affects compression)
+    /// - `is_local`: Whether the connection is within the same host (affects compression in Auto mode)
     pub fn new(is_local: bool) -> Self {
-        KdbCodec { is_local }
+        KdbCodec {
+            is_local,
+            compression_mode: CompressionMode::Auto,
+            validation_mode: ValidationMode::Strict,
+        }
+    }
+
+    /// Create a new KdbCodec with custom compression and validation modes
+    ///
+    /// # Parameters
+    /// - `is_local`: Whether the connection is within the same host (affects compression in Auto mode)
+    /// - `compression_mode`: How to handle message compression
+    /// - `validation_mode`: How strictly to validate incoming messages
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::{KdbCodec, CompressionMode, ValidationMode};
+    ///
+    /// // Always compress, lenient validation
+    /// let codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Lenient);
+    /// ```
+    pub fn with_options(
+        is_local: bool,
+        compression_mode: CompressionMode,
+        validation_mode: ValidationMode,
+    ) -> Self {
+        KdbCodec {
+            is_local,
+            compression_mode,
+            validation_mode,
+        }
+    }
+
+    /// Create a builder for KdbCodec with fluent API
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::{KdbCodec, CompressionMode, ValidationMode};
+    ///
+    /// // Using builder pattern
+    /// let codec = KdbCodec::builder()
+    ///     .is_local(false)
+    ///     .compression_mode(CompressionMode::Always)
+    ///     .validation_mode(ValidationMode::Lenient)
+    ///     .build();
+    /// ```
+    #[builder]
+    pub fn builder(
+        #[builder(default = false)] is_local: bool,
+        #[builder(default)] compression_mode: CompressionMode,
+        #[builder(default)] validation_mode: ValidationMode,
+    ) -> Self {
+        KdbCodec {
+            is_local,
+            compression_mode,
+            validation_mode,
+        }
+    }
+
+    /// Set the compression mode
+    pub fn set_compression_mode(&mut self, mode: CompressionMode) {
+        self.compression_mode = mode;
+    }
+
+    /// Get the current compression mode
+    pub fn compression_mode(&self) -> CompressionMode {
+        self.compression_mode
+    }
+
+    /// Set the validation mode
+    pub fn set_validation_mode(&mut self, mode: ValidationMode) {
+        self.validation_mode = mode;
+    }
+
+    /// Get the current validation mode
+    pub fn validation_mode(&self) -> ValidationMode {
+        self.validation_mode
     }
 }
 
@@ -154,10 +277,15 @@ impl Encoder<KdbMessage> for KdbCodec {
         let message_length = payload_bytes.len();
         let total_length = (HEADER_SIZE + message_length) as u32;
 
-        // Determine if compression should be attempted
-        // Compression is triggered when entire message size is more than 2000 bytes
-        // and the connection is not local
-        let should_compress = message_length > COMPRESSION_THRESHOLD - HEADER_SIZE && !self.is_local;
+        // Determine if compression should be attempted based on compression mode
+        let should_compress = match self.compression_mode {
+            CompressionMode::Never => false,
+            CompressionMode::Always => message_length > COMPRESSION_THRESHOLD - HEADER_SIZE,
+            CompressionMode::Auto => {
+                // Auto mode: compress if message is large and connection is not local
+                message_length > COMPRESSION_THRESHOLD - HEADER_SIZE && !self.is_local
+            }
+        };
 
         if should_compress {
             // Prepare raw message with placeholder header and payload
@@ -222,6 +350,31 @@ impl Decoder for KdbCodec {
         let header = MessageHeader::from_bytes(&src[..HEADER_SIZE]).map_err(|e| {
             io::Error::new(io::ErrorKind::InvalidData, format!("Invalid header: {}", e))
         })?;
+
+        // Validate header fields if in strict mode
+        if self.validation_mode == ValidationMode::Strict {
+            // Validate compressed flag (must be 0 or 1)
+            if header.compressed > 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Invalid compressed flag: {}. Expected 0 (uncompressed) or 1 (compressed)",
+                        header.compressed
+                    ),
+                ));
+            }
+
+            // Validate message type (must be 0, 1, or 2)
+            if header.message_type > 2 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Invalid message type: {}. Expected 0 (async), 1 (sync), or 2 (response)",
+                        header.message_type
+                    ),
+                ));
+            }
+        }
 
         // Check if we have the complete message
         let total_length = header.length as usize;
@@ -770,5 +923,203 @@ mod tests {
         assert_eq!(decoded_list.len(), 2500);
         assert_eq!(decoded_list[0], 123);
         assert_eq!(decoded_list[2499], 123);
+    }
+
+    #[test]
+    fn test_compression_mode_never() {
+        // Test that Never mode doesn't compress even large messages
+        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let message = KdbMessage::new(qmsg_type::synchronous, large_list);
+
+        // Use Never mode
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+
+        // Check compression flag should be 0
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 0, "Never mode should not compress");
+    }
+
+    #[test]
+    fn test_compression_mode_always() {
+        // Test that Always mode compresses large messages even on local connections
+        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let message = KdbMessage::new(qmsg_type::synchronous, large_list);
+
+        // Use Always mode with local connection
+        let mut codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+
+        // Check compression flag should be 1 (if compression succeeded)
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 1, "Always mode should compress even on local");
+    }
+
+    #[test]
+    fn test_compression_mode_auto_local() {
+        // Test that Auto mode doesn't compress on local connections
+        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let message = KdbMessage::new(qmsg_type::synchronous, large_list);
+
+        // Use Auto mode with local connection
+        let mut codec = KdbCodec::with_options(true, CompressionMode::Auto, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+
+        // Check compression flag should be 0
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 0, "Auto mode should not compress local connections");
+    }
+
+    #[test]
+    fn test_compression_mode_auto_remote() {
+        // Test that Auto mode compresses large messages on remote connections
+        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let message = KdbMessage::new(qmsg_type::synchronous, large_list);
+
+        // Use Auto mode with remote connection
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+
+        // Check compression flag should be 1
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 1, "Auto mode should compress remote large messages");
+    }
+
+    #[test]
+    fn test_validation_mode_strict_invalid_compressed() {
+        // Test that strict mode rejects invalid compressed flag
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+
+        // Create a message with invalid compressed flag (2)
+        buffer.extend_from_slice(&[ENCODING, 1, 2, 0]); // compressed = 2 (invalid)
+        buffer.extend_from_slice(&[20, 0, 0, 0]); // length = 20 (header + some data)
+        buffer.extend_from_slice(&[0; 12]); // dummy payload
+
+        // Try to decode - should fail
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err(), "Strict mode should reject invalid compressed flag");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Invalid compressed flag"), 
+            "Error message should mention compressed flag, got: {}", err);
+    }
+
+    #[test]
+    fn test_validation_mode_strict_invalid_message_type() {
+        // Test that strict mode rejects invalid message type
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+
+        // Create a message with invalid message type (3)
+        buffer.extend_from_slice(&[ENCODING, 3, 0, 0]); // message_type = 3 (invalid)
+        buffer.extend_from_slice(&[20, 0, 0, 0]); // length = 20
+        buffer.extend_from_slice(&[0; 12]); // dummy payload
+
+        // Try to decode - should fail
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err(), "Strict mode should reject invalid message type");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Invalid message type"), 
+            "Error message should mention message type, got: {}", err);
+    }
+
+    #[test]
+    fn test_validation_mode_lenient_accepts_invalid() {
+        // Test that lenient mode accepts invalid values
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Lenient);
+        
+        // Create a small valid K object for the payload
+        let small_int = K::new_int(42);
+        let payload_bytes = small_int.q_ipc_encode();
+        let total_length = (HEADER_SIZE + payload_bytes.len()) as u32;
+        
+        let mut buffer = BytesMut::new();
+        // Create a message with "invalid" values that lenient mode should accept
+        buffer.extend_from_slice(&[ENCODING, 5, 3, 0]); // message_type = 5, compressed = 3 (both "invalid")
+        
+        // Add length
+        let length_bytes = match ENCODING {
+            0 => total_length.to_be_bytes(),
+            _ => total_length.to_le_bytes(),
+        };
+        buffer.extend_from_slice(&length_bytes);
+        buffer.extend_from_slice(&payload_bytes);
+
+        // Try to decode - should succeed in lenient mode
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_ok(), "Lenient mode should accept non-standard values");
+        assert!(result.unwrap().is_some(), "Should decode message successfully");
+    }
+
+    #[test]
+    fn test_codec_getters_setters() {
+        // Test getting and setting modes
+        let mut codec = KdbCodec::new(false);
+        
+        // Check defaults
+        assert_eq!(codec.compression_mode(), CompressionMode::Auto);
+        assert_eq!(codec.validation_mode(), ValidationMode::Strict);
+        
+        // Set new modes
+        codec.set_compression_mode(CompressionMode::Always);
+        codec.set_validation_mode(ValidationMode::Lenient);
+        
+        // Verify changes
+        assert_eq!(codec.compression_mode(), CompressionMode::Always);
+        assert_eq!(codec.validation_mode(), ValidationMode::Lenient);
+    }
+
+    #[test]
+    fn test_compression_mode_small_message() {
+        // Test that even Always mode doesn't compress very small messages
+        let small_int = K::new_int(42);
+        let message = KdbMessage::new(qmsg_type::synchronous, small_int);
+
+        // Use Always mode
+        let mut codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
+        let mut buffer = BytesMut::new();
+        codec.encode(message, &mut buffer).unwrap();
+
+        // Small messages should not be compressed (below threshold)
+        let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
+        assert_eq!(header.compressed, 0, "Small messages should not be compressed");
+    }
+
+    #[test]
+    fn test_codec_builder_pattern() {
+        // Test builder pattern creates codec with correct settings
+        let codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Always)
+            .validation_mode(ValidationMode::Lenient)
+            .build();
+
+        assert_eq!(codec.compression_mode(), CompressionMode::Always);
+        assert_eq!(codec.validation_mode(), ValidationMode::Lenient);
+    }
+
+    #[test]
+    fn test_codec_builder_with_defaults() {
+        // Test builder pattern with default values
+        let codec = KdbCodec::builder().build();
+
+        // Should use defaults
+        assert_eq!(codec.compression_mode(), CompressionMode::Auto);
+        assert_eq!(codec.validation_mode(), ValidationMode::Strict);
+    }
+
+    #[test]
+    fn test_codec_builder_partial() {
+        // Test builder pattern with only some values specified
+        let codec = KdbCodec::builder()
+            .compression_mode(CompressionMode::Never)
+            .build();
+
+        assert_eq!(codec.compression_mode(), CompressionMode::Never);
+        assert_eq!(codec.validation_mode(), ValidationMode::Strict); // default
     }
 }
