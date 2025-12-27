@@ -12,6 +12,7 @@ Kdb+ IPC codec library for handling kdb+ wire protocol data with Rust.
 """
 
 [dependencies]
+bon = "3"
 bytes = { version = "1", optional = true }
 chrono={version = "0.4", optional = true}
 futures = { version = "0.3", optional = true }

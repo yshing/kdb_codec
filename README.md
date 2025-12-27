@@ -100,11 +100,15 @@ use kdb_codec::*;
 // Auto mode (default): compress large messages on remote connections only
 let codec = KdbCodec::new(false);
 
-// Always compress: compress messages larger than 2000 bytes even on local connections
+// Using with_options method
 let codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
 
-// Never compress: disable compression entirely
-let codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+// Using builder pattern (recommended)
+let codec = KdbCodec::builder()
+    .is_local(false)
+    .compression_mode(CompressionMode::Never)
+    .validation_mode(ValidationMode::Strict)
+    .build();
 ```
 
 **Compression Modes:**
@@ -122,8 +126,10 @@ use kdb_codec::*;
 // Strict mode (default): reject invalid headers
 let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
 
-// Lenient mode: accept non-standard header values (for debugging/compatibility)
-let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Lenient);
+// Using builder pattern
+let codec = KdbCodec::builder()
+    .validation_mode(ValidationMode::Lenient)
+    .build();
 ```
 
 **Validation Modes:**
@@ -161,7 +167,7 @@ use kdb_codec::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Connect with always compress and lenient validation
+    // Using connect_with_options method
     let mut stream = QStream::connect_with_options(
         ConnectionMethod::TCP, 
         "localhost", 
@@ -170,6 +176,31 @@ async fn main() -> Result<()> {
         CompressionMode::Always,
         ValidationMode::Lenient
     ).await?;
+    
+    let result = stream.send_sync_message(&"2+2").await?;
+    println!("Result: {}", result.get_int()?);
+    
+    Ok(())
+}
+```
+
+**Using Builder Pattern (recommended):**
+
+```rust
+use kdb_codec::*;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Using builder pattern for cleaner API
+    let mut stream = QStream::builder()
+        .method(ConnectionMethod::TCP)
+        .host("localhost")
+        .port(5000)
+        .credential("user:pass")
+        .compression_mode(CompressionMode::Always)
+        .validation_mode(ValidationMode::Lenient)
+        .connect()
+        .await?;
     
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);

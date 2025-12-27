@@ -207,6 +207,7 @@ impl Query for K {
 
 //%% QStream %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
+#[bon::bon]
 impl QStream {
     /// General constructor of `QStream`.
     fn new(
@@ -219,6 +220,52 @@ impl QStream {
             method,
             listener: is_listener,
         }
+    }
+
+    /// Create a builder for connecting to q/kdb+ with fluent API
+    ///
+    /// # Example
+    /// ```no_run
+    /// use kdb_codec::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<()> {
+    ///     // Using builder pattern
+    ///     let mut stream = QStream::builder()
+    ///         .method(ConnectionMethod::TCP)
+    ///         .host("localhost")
+    ///         .port(5000)
+    ///         .credential("user:pass")
+    ///         .compression_mode(CompressionMode::Always)
+    ///         .validation_mode(ValidationMode::Lenient)
+    ///         .connect()
+    ///         .await?;
+    ///     
+    ///     let result = stream.send_sync_message(&"2+2").await?;
+    ///     println!("Result: {}", result.get_int()?);
+    ///     
+    ///     stream.shutdown().await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    #[builder(on(String, into), on(&str, into))]
+    pub async fn builder(
+        method: ConnectionMethod,
+        #[builder(default = String::new())] host: String,
+        port: u16,
+        #[builder(default = String::new())] credential: String,
+        #[builder(default)] compression_mode: CompressionMode,
+        #[builder(default)] validation_mode: ValidationMode,
+    ) -> Result<Self> {
+        Self::connect_with_options(
+            method,
+            &host,
+            port,
+            &credential,
+            compression_mode,
+            validation_mode,
+        )
+        .await
     }
 
     /// Connect to q/kdb+ specifying a connection method, destination host, destination port and access credential.

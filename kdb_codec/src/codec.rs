@@ -158,6 +158,7 @@ pub struct KdbCodec {
     validation_mode: ValidationMode,
 }
 
+#[bon::bon]
 impl KdbCodec {
     /// Create a new KdbCodec with default settings (Auto compression, Strict validation)
     ///
@@ -189,6 +190,32 @@ impl KdbCodec {
         is_local: bool,
         compression_mode: CompressionMode,
         validation_mode: ValidationMode,
+    ) -> Self {
+        KdbCodec {
+            is_local,
+            compression_mode,
+            validation_mode,
+        }
+    }
+
+    /// Create a builder for KdbCodec with fluent API
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::{KdbCodec, CompressionMode, ValidationMode};
+    ///
+    /// // Using builder pattern
+    /// let codec = KdbCodec::builder()
+    ///     .is_local(false)
+    ///     .compression_mode(CompressionMode::Always)
+    ///     .validation_mode(ValidationMode::Lenient)
+    ///     .build();
+    /// ```
+    #[builder]
+    pub fn builder(
+        #[builder(default = false)] is_local: bool,
+        #[builder(default)] compression_mode: CompressionMode,
+        #[builder(default)] validation_mode: ValidationMode,
     ) -> Self {
         KdbCodec {
             is_local,
@@ -1060,5 +1087,39 @@ mod tests {
         // Small messages should not be compressed (below threshold)
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
         assert_eq!(header.compressed, 0, "Small messages should not be compressed");
+    }
+
+    #[test]
+    fn test_codec_builder_pattern() {
+        // Test builder pattern creates codec with correct settings
+        let codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Always)
+            .validation_mode(ValidationMode::Lenient)
+            .build();
+
+        assert_eq!(codec.compression_mode(), CompressionMode::Always);
+        assert_eq!(codec.validation_mode(), ValidationMode::Lenient);
+    }
+
+    #[test]
+    fn test_codec_builder_with_defaults() {
+        // Test builder pattern with default values
+        let codec = KdbCodec::builder().build();
+
+        // Should use defaults
+        assert_eq!(codec.compression_mode(), CompressionMode::Auto);
+        assert_eq!(codec.validation_mode(), ValidationMode::Strict);
+    }
+
+    #[test]
+    fn test_codec_builder_partial() {
+        // Test builder pattern with only some values specified
+        let codec = KdbCodec::builder()
+            .compression_mode(CompressionMode::Never)
+            .build();
+
+        assert_eq!(codec.compression_mode(), CompressionMode::Never);
+        assert_eq!(codec.validation_mode(), ValidationMode::Strict); // default
     }
 }

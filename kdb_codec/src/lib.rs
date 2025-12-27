@@ -45,11 +45,15 @@
 //! // Auto mode (default): compress large messages on remote connections only
 //! let codec = KdbCodec::new(false);
 //!
-//! // Always compress: compress large messages even on local connections
+//! // Using with_options method
 //! let codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
 //!
-//! // Never compress: disable compression entirely
-//! let codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+//! // Using builder pattern (recommended)
+//! let codec = KdbCodec::builder()
+//!     .is_local(false)
+//!     .compression_mode(CompressionMode::Never)
+//!     .validation_mode(ValidationMode::Strict)
+//!     .build();
 //! ```
 //!
 //! ### Header Validation
@@ -60,8 +64,10 @@
 //! // Strict mode (default): reject invalid headers
 //! let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
 //!
-//! // Lenient mode: accept non-standard header values
-//! let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Lenient);
+//! // Using builder pattern
+//! let codec = KdbCodec::builder()
+//!     .validation_mode(ValidationMode::Lenient)
+//!     .build();
 //! ```
 //!
 //! ## Type Mapping
