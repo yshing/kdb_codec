@@ -232,7 +232,6 @@ dict.set_value(&k!(sym: "a"), k!(float: 1.5)).unwrap_err();
 dict[1] = k!([k!(long: 10), k!(float: 1.5)]);  // Now it's a compound list
 ```
 
-````
 
 ### `try_column()` and `try_column_mut()`
 
@@ -256,7 +255,7 @@ let mut table = k!(table: {
 if let Ok(price) = table.try_column_mut("price") {
     *price = k!(float: vec![2.0]);
 }
-````
+```
 
 ## Benefits
 
