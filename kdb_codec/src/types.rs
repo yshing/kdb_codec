@@ -4650,4 +4650,3 @@ fn datetime_to_q_datetime(datetime: DateTime<Utc>) -> f64 {
 }
 
 //%% Getter //%%vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
-

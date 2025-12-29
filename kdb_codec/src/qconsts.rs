@@ -142,7 +142,7 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn guid_border(_: K) -> K{
-    ///   new_guid(qnull_base::U)
+    ///   K::new_guid(qnull_base::U)
     /// }
     /// ```
     /// ```q
@@ -159,8 +159,8 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn short_borders(_: K) -> K{
-    ///   let shorts=new_list(qtype::SHORT_LIST, 3);
-    ///   let shorts_slice=shorts.as_mut_slice::<H>();
+    ///   let mut shorts = K::new_short_list(vec![0, 0, 0], qattribute::NONE);
+    ///   let shorts_slice=shorts.as_mut_vec::<H>().unwrap();
     ///   shorts_slice[0]=qnull_base::H;
     ///   shorts_slice[1]=qinf_base::H;
     ///   shorts_slice[2]=qninf_base::H;
@@ -181,8 +181,8 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn int_borders(_: K) -> K{
-    ///   let ints=new_list(qtype::INT_LIST, 3);
-    ///   let ints_slice=ints.as_mut_slice::<I>();
+    ///   let mut ints = K::new_int_list(vec![0, 0, 0], qattribute::NONE);
+    ///   let ints_slice=ints.as_mut_vec::<I>().unwrap();
     ///   ints_slice[0]=qnull_base::I;
     ///   ints_slice[1]=qinf_base::I;
     ///   ints_slice[2]=qninf_base::I;
@@ -200,11 +200,12 @@ pub mod qnull_base {
     /// # Example
     /// ```no_run
     /// use kdb_codec::*;
+    /// use chrono::Utc;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn long_borders(_: K) -> K{
-    ///   let timestamps=new_list(qtype::TIMESTAMP_LIST, 3);
-    ///   let timestamps_slice=timestamps.as_mut_slice::<J>();
+    ///   let mut timestamps = K::new_timestamp_list(vec![Utc::now(), Utc::now(), Utc::now()], qattribute::NONE);
+    ///   let timestamps_slice=timestamps.as_mut_vec::<J>().unwrap();
     ///   timestamps_slice[0]=qnull_base::J;
     ///   timestamps_slice[1]=qinf_base::J;
     ///   timestamps_slice[2]=qninf_base::J;
@@ -225,8 +226,8 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn real_borders(_: K) -> K{
-    ///   let reals=new_list(qtype::REAL_LIST, 3);
-    ///   let reals_slice=reals.as_mut_slice::<E>();
+    ///   let mut reals = K::new_real_list(vec![0.0, 0.0, 0.0], qattribute::NONE);
+    ///   let reals_slice=reals.as_mut_vec::<E>().unwrap();
     ///   reals_slice[0]=qnull_base::E;
     ///   reals_slice[1]=qinf_base::E;
     ///   reals_slice[2]=qninf_base::E;
@@ -244,11 +245,12 @@ pub mod qnull_base {
     /// # Example
     /// ```no_run
     /// use kdb_codec::*;
+    /// use chrono::Utc;
     ///
     /// #[no_mangle]
     /// pub extern "C" fn float_borders(_: K) -> K{
-    ///   let datetimes=new_list(qtype::DATETIME_LIST, 3);
-    ///   let datetimes_slice=datetimes.as_mut_slice::<F>();
+    ///   let mut datetimes = K::new_datetime_list(vec![Utc::now(), Utc::now(), Utc::now()], qattribute::NONE);
+    ///   let datetimes_slice=datetimes.as_mut_vec::<F>().unwrap();
     ///   datetimes_slice[0]=qnull_base::F;
     ///   datetimes_slice[1]=qinf_base::F;
     ///   datetimes_slice[2]=qninf_base::F;
@@ -269,7 +271,7 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn char_border(_: K) -> K{
-    ///   new_char(qnull_base::C)
+    ///   K::new_char(qnull_base::C)
     /// }
     /// ```
     /// ```q
@@ -288,10 +290,10 @@ pub mod qnull_base {
     ///
     /// #[no_mangle]
     /// pub extern "C" fn string_borders(_: K) -> K{
-    ///   let compound=new_list(qtype::COMPOUND_LIST, 2);
-    ///   let compound_slice=compound.as_mut_slice::<K>();
-    ///   compound_slice[0]=new_symbol(qnull_base::S);
-    ///   compound_slice[1]=new_string(qnull_base::S);
+    ///   let mut compound = K::new_compound_list(vec![K::new_symbol(String::new()), K::new_symbol(String::new())]);
+    ///   let compound_slice=compound.as_mut_vec::<K>().unwrap();
+    ///   compound_slice[0]=K::new_symbol(qnull_base::S.to_string());
+    ///   compound_slice[1]=K::new_string(qnull_base::S.to_string(), qattribute::NONE);
     ///   compound
     /// }
     /// ```

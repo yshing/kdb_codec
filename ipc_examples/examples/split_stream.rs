@@ -27,10 +27,7 @@ async fn main() -> Result<()> {
         for i in 0..5 {
             let query = KdbMessage::new(
                 qmsg_type::synchronous,
-                K::new_compound_list(vec![
-                    K::new_symbol(String::from("til")),
-                    K::new_long(i),
-                ]),
+                K::new_compound_list(vec![K::new_symbol(String::from("til")), K::new_long(i)]),
             );
 
             if tx.send(query).await.is_err() {
@@ -83,7 +80,10 @@ async fn forward_with_split(
                 }
             }
         }
-        println!("Response handler finished. Total responses: {}", response_count);
+        println!(
+            "Response handler finished. Total responses: {}",
+            response_count
+        );
     });
 
     // Forward messages from channel to kdb+ (no select! needed!)
@@ -128,14 +128,10 @@ async fn bidirectional_with_split(
     let (sink, stream) = framed.split();
 
     // Spawn task to send requests
-    let send_handle = tokio::spawn(async move {
-        forward_requests(request_rx, sink).await
-    });
+    let send_handle = tokio::spawn(async move { forward_requests(request_rx, sink).await });
 
     // Spawn task to receive responses
-    let recv_handle = tokio::spawn(async move {
-        receive_responses(stream, response_tx).await
-    });
+    let recv_handle = tokio::spawn(async move { receive_responses(stream, response_tx).await });
 
     // Wait for both tasks
     let (send_result, recv_result) = tokio::join!(send_handle, recv_handle);

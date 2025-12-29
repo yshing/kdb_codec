@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-30
+
+### Added
+
+- **Index Trait Implementation** for intuitive K object data access
+  - `Index<usize>` for dictionary access: `dict[0]` (keys), `dict[1]` (values)
+  - `Index<&str>` for table column access: `table["column_name"]`
+  - `IndexMut<usize>` and `IndexMut<&str>` for mutable access
+  - Safe access methods: `try_index()`, `try_index_mut()`, `try_column()`, `try_column_mut()`
+  - Support for compound list indexing
+- New example: `index_trait_demo.rs` demonstrating Index trait usage
+- Comprehensive documentation for all Index trait implementations
+
+### Changed
+
+- **Enhanced `k!` macro** now supports `vec![value; count]` repetition syntax
+  - Allows concise creation of large lists: `k!(long: vec![42; 3000])`
+  - Supported for all list types (byte, short, int, long, real, float, symbol, temporal types)
+  - Works with attributes: `k!(long: vec![1; 2500]; @sorted)`
+- Simplified test code using `k!` macro throughout `index.rs` and `codec.rs`
+- Improved code readability with 50-67% reduction in boilerplate
+
+### Documentation
+
+- Added `INDEX_TRAIT.md` with complete design rationale
+- Updated `k!` macro documentation with repetition syntax examples
+- Updated README with Index trait usage examples
+
 ## [0.2.0] - 2025-12-28
 
 ### Added
@@ -33,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release with core kdb+ IPC codec functionality.
 
-[Unreleased]: https://github.com/yshing/kdb_codec/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/yshing/kdb_codec/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/yshing/kdb_codec/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yshing/kdb_codec/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yshing/kdb_codec/releases/tag/v0.1.0

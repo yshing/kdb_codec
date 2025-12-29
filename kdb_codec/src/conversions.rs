@@ -1,9 +1,9 @@
 //! Conversion functions between q types and Rust types.
 
+use crate::error::Error;
 use crate::qconsts::qnull_base;
 use crate::qnull_inf::{qinf, qninf, qnull};
 use crate::types::Result;
-use crate::error::Error;
 use chrono::prelude::*;
 use chrono::Duration;
 

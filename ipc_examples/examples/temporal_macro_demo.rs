@@ -11,8 +11,8 @@ fn main() {
 
     // ========== Timestamp (DateTime<Utc>) ==========
     println!("--- Timestamps ---");
-    
-    let timestamp = k!(timestamp: 
+
+    let timestamp = k!(timestamp:
         NaiveDate::from_ymd_opt(2024, 1, 15)
             .unwrap()
             .and_hms_nano_opt(10, 30, 45, 123456789)
@@ -21,7 +21,7 @@ fn main() {
             .unwrap()
     );
     println!("Timestamp: {}", timestamp);
-    
+
     let timestamp_list = k!(timestamp: vec![
         NaiveDate::from_ymd_opt(2024, 1, 1)
             .unwrap()
@@ -40,10 +40,10 @@ fn main() {
 
     // ========== Date (NaiveDate) ==========
     println!("\n--- Dates ---");
-    
+
     let date = k!(date: NaiveDate::from_ymd_opt(2024, 12, 25).unwrap());
     println!("Date: {}", date);
-    
+
     let date_list = k!(date: vec![
         NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
         NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
@@ -53,10 +53,10 @@ fn main() {
 
     // ========== Month (NaiveDate) ==========
     println!("\n--- Months ---");
-    
+
     let month = k!(month: NaiveDate::from_ymd_opt(2024, 3, 1).unwrap());
     println!("Month: {}", month);
-    
+
     let month_list = k!(month: vec![
         NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
         NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
@@ -66,7 +66,7 @@ fn main() {
 
     // ========== Datetime (DateTime<Utc>) ==========
     println!("\n--- Datetime ---");
-    
+
     let datetime = k!(datetime:
         NaiveDate::from_ymd_opt(2024, 6, 15)
             .unwrap()
@@ -79,10 +79,10 @@ fn main() {
 
     // ========== Timespan (Duration) ==========
     println!("\n--- Timespans ---");
-    
+
     let timespan = k!(timespan: Duration::hours(5) + Duration::minutes(30));
     println!("Timespan: {}", timespan);
-    
+
     let timespan_list = k!(timespan: vec![
         Duration::hours(1),
         Duration::minutes(30),
@@ -92,10 +92,10 @@ fn main() {
 
     // ========== Time of Day (Duration) ==========
     println!("\n--- Time ---");
-    
+
     let time = k!(time: Duration::hours(14) + Duration::minutes(30) + Duration::seconds(45));
     println!("Time: {}", time);
-    
+
     let time_list = k!(time: vec![
         Duration::hours(9) + Duration::minutes(0),
         Duration::hours(12) + Duration::minutes(30),
@@ -105,10 +105,10 @@ fn main() {
 
     // ========== Minute (Duration) ==========
     println!("\n--- Minutes ---");
-    
+
     let minute = k!(minute: Duration::minutes(90));
     println!("Minute: {}", minute);
-    
+
     let minute_list = k!(minute: vec![
         Duration::minutes(0),
         Duration::minutes(30),
@@ -118,13 +118,13 @@ fn main() {
 
     // ========== Second (Duration) ==========
     println!("\n--- Seconds ---");
-    
+
     let second = k!(second: Duration::seconds(3661));
     println!("Second: {}", second);
 
     // ========== Trading Data Example ==========
     println!("\n--- Trading Table with Timestamps ---");
-    
+
     let trades = k!(table: {
         "time" => k!(timestamp: vec![
             NaiveDate::from_ymd_opt(2024, 1, 15)
@@ -150,12 +150,12 @@ fn main() {
         "price" => k!(float: vec![150.25, 2801.50, 380.75]),
         "size" => k!(long: vec![100, 50, 200])
     });
-    
+
     println!("Trades:\n{}", trades);
 
     // ========== Time Series Data ==========
     println!("\n--- Time Series Data ---");
-    
+
     let timeseries = k!(dict:
         k!(date: vec![
             NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),

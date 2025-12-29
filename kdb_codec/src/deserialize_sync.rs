@@ -158,10 +158,15 @@ pub(crate) fn q_ipc_decode_sync(bytes: &[u8], encode: u8) -> K {
 
 fn deserialize_bytes_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K, usize) {
     // Type of q object is stored in a byte
-    assert!(cursor < bytes.len(), "deserialize_bytes_sync: cursor {} is beyond bytes length {}", cursor, bytes.len());
-    
+    assert!(
+        cursor < bytes.len(),
+        "deserialize_bytes_sync: cursor {} is beyond bytes length {}",
+        cursor,
+        bytes.len()
+    );
+
     let qtype = bytes[cursor] as i8;
-    
+
     match qtype {
         qtype::BOOL_ATOM => deserialize_bool(bytes, cursor + 1, encode),
         qtype::GUID_ATOM => deserialize_guid(bytes, cursor + 1, encode),
@@ -178,8 +183,12 @@ fn deserialize_bytes_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K, usize)
         }
         qtype::MONTH_ATOM => build_element!(bytes, cursor + 1, encode, qtype::MONTH_ATOM, i32),
         qtype::DATE_ATOM => build_element!(bytes, cursor + 1, encode, qtype::DATE_ATOM, i32),
-        qtype::DATETIME_ATOM => build_element!(bytes, cursor + 1, encode, qtype::DATETIME_ATOM, f64),
-        qtype::TIMESPAN_ATOM => build_element!(bytes, cursor + 1, encode, qtype::TIMESPAN_ATOM, i64),
+        qtype::DATETIME_ATOM => {
+            build_element!(bytes, cursor + 1, encode, qtype::DATETIME_ATOM, f64)
+        }
+        qtype::TIMESPAN_ATOM => {
+            build_element!(bytes, cursor + 1, encode, qtype::TIMESPAN_ATOM, i64)
+        }
         qtype::MINUTE_ATOM => build_element!(bytes, cursor + 1, encode, qtype::MINUTE_ATOM, i32),
         qtype::SECOND_ATOM => build_element!(bytes, cursor + 1, encode, qtype::SECOND_ATOM, i32),
         qtype::TIME_ATOM => build_element!(bytes, cursor + 1, encode, qtype::TIME_ATOM, i32),
@@ -255,7 +264,7 @@ fn get_attribute_and_size(bytes: &[u8], cursor: usize, encode: u8) -> (i8, usize
         cursor,
         bytes.len().saturating_sub(cursor)
     );
-    
+
     let size = match encode {
         0 => u32::from_be_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
         _ => u32::from_le_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
@@ -343,7 +352,7 @@ fn deserialize_table_sync(bytes: &[u8], cursor: usize, encode: u8) -> (K, usize)
     // Skip dictionary qtype byte (should be 99 or 127)
     let _dict_qtype = bytes[cursor + 1] as i8;
     let cursor = cursor + 2;
-    
+
     // Deserialize the dictionary (keys and values)
     let (dictionary, cursor) = deserialize_dictionary_sync(bytes, cursor, encode);
     (
@@ -379,7 +388,9 @@ fn deserialize_error(bytes: &[u8], cursor: usize, _: u8) -> (K, usize) {
     let k = K::new(
         qtype::ERROR,
         qattribute::NONE,
-        k0_inner::symbol(String::from_utf8(bytes[cursor..cursor + null_location].to_vec()).unwrap()),
+        k0_inner::symbol(
+            String::from_utf8(bytes[cursor..cursor + null_location].to_vec()).unwrap(),
+        ),
     );
     (k, cursor + null_location + 1)
 }

@@ -27,7 +27,8 @@
 //!     let stream = TcpStream::connect("127.0.0.1:5000").await?;
 //!     let mut framed = Framed::new(stream, KdbCodec::new(true));
 //!     
-//!     framed.feed(("1+1", qmsg_type::synchronous)).await?;
+//!     let query = K::new_symbol("1+1".to_string());
+//!     framed.feed(KdbMessage::new(qmsg_type::synchronous, query)).await?;
 //!     framed.flush().await?;
 //!     
 //!     if let Some(Ok(response)) = framed.next().await {
@@ -111,12 +112,13 @@
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
 // Base modules - must come first
+mod conversions;
 pub mod error;
+mod index;
+mod macros;
 mod qconsts;
 mod qnull_inf;
 mod types;
-mod conversions;
-mod macros;
 
 // IPC modules
 mod codec;
@@ -135,9 +137,9 @@ pub use qconsts::{qattribute, qinf_base, qninf_base, qnull_base, qtype};
 // Re-export qnull_inf modules at root level
 pub use qnull_inf::{qinf, qninf, qnull};
 
-// Re-export types  
-pub use types::{C, E, F, G, H, I, J, K, S, U, Result};
+// Re-export types
 pub use error::Error;
+pub use types::{Result, C, E, F, G, H, I, J, K, S, U};
 // Re-export internal types for use within the crate
 pub(crate) use types::{k0, k0_inner, k0_list, AsAny, Klone};
 
