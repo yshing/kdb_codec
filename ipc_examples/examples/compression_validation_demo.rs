@@ -98,8 +98,7 @@ fn test_validation_lenient() {
     let mut buffer = BytesMut::new();
     // Use non-standard but harmless values
     buffer.extend_from_slice(&[1, 5, 3, 0]); // msg_type=5, compressed=3 (both "invalid" in strict mode)
-                                             // Copy the rest from the valid message (length and payload)
-    buffer.extend_from_slice(&temp_buffer[4..]);
+    buffer.extend_from_slice(&temp_buffer[4..]); // Copy the rest from the valid message (length and payload)
 
     // Try to decode
     let result = codec.decode(&mut buffer);

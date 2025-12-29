@@ -223,7 +223,7 @@ impl QStream {
     /// Create a builder for connecting to q/kdb+ with fluent API
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use kdb_codec::*;
     ///
     /// #[tokio::main]

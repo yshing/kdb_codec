@@ -27,7 +27,8 @@
 //!     let stream = TcpStream::connect("127.0.0.1:5000").await?;
 //!     let mut framed = Framed::new(stream, KdbCodec::new(true));
 //!     
-//!     framed.feed(("1+1", qmsg_type::synchronous)).await?;
+//!     let query = K::new_symbol("1+1".to_string());
+//!     framed.feed(KdbMessage::new(qmsg_type::synchronous, query)).await?;
 //!     framed.flush().await?;
 //!     
 //!     if let Some(Ok(response)) = framed.next().await {
