@@ -2047,7 +2047,7 @@ fn push_pop_test() -> Result<()> {
 
 /// Integration test that requires a running kdb+ server on localhost:5000
 /// with credentials kdbuser:pass
-/// 
+///
 /// Run with: `cargo test functional_message_test -- --ignored`
 #[async_std::test]
 #[ignore]
@@ -2838,7 +2838,7 @@ async fn functional_message_test(socket: &mut Qsocket) -> Result<()> {
 
 /// Integration test that requires a running kdb+ server on localhost:5000
 /// with credentials kdbuser:pass. Tests compression functionality.
-/// 
+///
 /// Run with: `cargo test compression_test -- --ignored`
 #[async_std::test]
 #[ignore]

@@ -5,7 +5,7 @@
 //!
 //! # Examples
 //!
-//! ## Dictionary Access
+//! ## Dictionary Access by Position
 //! ```rust
 //! use kdb_codec::*;
 //!
@@ -14,6 +14,20 @@
 //! // Access keys and values using index
 //! let keys_ref = &dict[0];    // Get keys K object
 //! let values_ref = &dict[1];  // Get values K object
+//! ```
+//!
+//! ## Dictionary Lookup by Key
+//! ```rust
+//! use kdb_codec::*;
+//!
+//! let dict = k!(dict:
+//!     k!(sym: vec!["apple", "banana"]) =>
+//!     k!([k!(long: 10), k!(long: 20)])
+//! );
+//!
+//! // Look up value by key
+//! let key = k!(sym: "banana");
+//! let value = &dict[&key];  // Returns K object with value 20
 //! ```
 //!
 //! ## Table Column Access
@@ -99,6 +113,32 @@ impl IndexMut<usize> for K {
                 self.get_type()
             ),
         }
+    }
+}
+
+// Dictionary lookup by K object (key lookup)
+impl Index<&K> for K {
+    type Output = K;
+
+    /// Look up a value in a dictionary by key.
+    ///
+    /// # Panics
+    /// Panics if:
+    /// - The K object is not a dictionary
+    /// - The key is not found in the dictionary
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::*;
+    ///
+    /// let dict = k!(dict: k!(sym: vec!["a", "b", "c"]) => k!(long: vec![10, 20, 30]));
+    ///
+    /// let key = k!(sym: "b");
+    /// let value = &dict[&key];  // Returns K object with value 20
+    /// ```
+    fn index(&self, key: &K) -> &Self::Output {
+        self.find_value(key)
+            .unwrap_or_else(|_| panic!("Key {:?} not found in dictionary", key))
     }
 }
 
@@ -251,6 +291,91 @@ impl K {
     pub fn try_column_mut(&mut self, column: &str) -> Result<&mut K, Error> {
         self.get_mut_column(column)
     }
+
+    /// Look up a value in a dictionary by key, returning Result instead of panicking.
+    ///
+    /// This searches for the key in the dictionary's keys and returns the corresponding value.
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::*;
+    ///
+    /// let dict = k!(dict: k!(sym: vec!["a", "b", "c"]) => k!(long: vec![10, 20, 30]));
+    ///
+    /// let key = k!(sym: "b");
+    /// assert!(dict.try_find(&key).is_ok());
+    ///
+    /// let missing_key = k!(sym: "z");
+    /// assert!(dict.try_find(&missing_key).is_err());
+    /// ```
+    pub fn try_find(&self, key: &K) -> Result<&K, Error> {
+        match self.get_type() {
+            qtype::DICTIONARY | qtype::SORTED_DICTIONARY => {
+                let dict_vec = self.as_vec::<K>()?;
+                let keys = &dict_vec[0];
+                let values = &dict_vec[1];
+
+                // Find the key in the keys list
+                let key_index = Self::find_key_index(keys, key)?;
+
+                // Get the corresponding value
+                values
+                    .as_vec::<K>()?
+                    .get(key_index)
+                    .ok_or_else(|| Error::index_out_of_bounds(values.len(), key_index))
+            }
+            _ => Err(Error::invalid_operation("try_find", self.get_type(), None)),
+        }
+    }
+
+    /// Internal helper to find the index of a key in a dictionary's key list.
+    fn find_key_index(keys: &K, target_key: &K) -> Result<usize, Error> {
+        // Handle different key types
+        match keys.get_type() {
+            qtype::SYMBOL_LIST => {
+                let target_sym = target_key.get_symbol()?;
+                let key_list = keys.as_vec::<String>()?;
+                key_list
+                    .iter()
+                    .position(|k| k == target_sym)
+                    .ok_or_else(|| Error::NoSuchColumn(format!("Key '{}' not found", target_sym)))
+            }
+            qtype::LONG_LIST => {
+                let target_long = target_key.get_long()?;
+                let key_list = keys.as_vec::<i64>()?;
+                key_list
+                    .iter()
+                    .position(|&k| k == target_long)
+                    .ok_or_else(|| Error::NoSuchColumn(format!("Key {} not found", target_long)))
+            }
+            qtype::INT_LIST => {
+                let target_int = target_key.get_int()?;
+                let key_list = keys.as_vec::<i32>()?;
+                key_list
+                    .iter()
+                    .position(|&k| k == target_int)
+                    .ok_or_else(|| Error::NoSuchColumn(format!("Key {} not found", target_int)))
+            }
+            qtype::FLOAT_LIST => {
+                let target_float = target_key.get_float()?;
+                let key_list = keys.as_vec::<f64>()?;
+                key_list
+                    .iter()
+                    .position(|&k| (k - target_float).abs() < f64::EPSILON)
+                    .ok_or_else(|| Error::NoSuchColumn(format!("Key {} not found", target_float)))
+            }
+            _ => Err(Error::invalid_operation(
+                "find_key_index",
+                keys.get_type(),
+                None,
+            )),
+        }
+    }
+
+    /// Internal helper used by Index<&K> trait.
+    fn find_value(&self, key: &K) -> Result<&K, Error> {
+        self.try_find(key)
+    }
 }
 
 #[cfg(test)]
@@ -338,15 +463,79 @@ mod tests {
 
     #[test]
     fn test_compound_list_try_index() {
-        let list = k!([
-            k!(long: 42),
-            k!(float: 3.14),
-            k!(sym: "test")
-        ]);
+        let list = k!([k!(long: 42), k!(float: 3.14), k!(sym: "test")]);
 
         assert!(list.try_index(0).is_ok());
         assert!(list.try_index(1).is_ok());
         assert!(list.try_index(2).is_ok());
         assert!(list.try_index(3).is_err());
+    }
+
+    #[test]
+    fn test_dictionary_lookup_by_key() {
+        // Symbol keys with compound list values
+        let dict = k!(dict:
+            k!(sym: vec!["apple", "banana", "cherry"]) =>
+            k!([k!(long: 10), k!(long: 20), k!(long: 30)])
+        );
+
+        let key1 = k!(sym: "apple");
+        let value1 = &dict[&key1];
+        assert_eq!(value1.get_long().unwrap(), 10);
+
+        let key2 = k!(sym: "cherry");
+        let value2 = &dict[&key2];
+        assert_eq!(value2.get_long().unwrap(), 30);
+    }
+
+    #[test]
+    fn test_dictionary_lookup_int_keys() {
+        let dict = k!(dict:
+            k!(int: vec![1, 2, 3]) =>
+            k!([k!(sym: "one"), k!(sym: "two"), k!(sym: "three")])
+        );
+
+        let key = k!(int: 2);
+        let value = &dict[&key];
+        assert_eq!(value.get_symbol().unwrap(), "two");
+    }
+
+    #[test]
+    fn test_dictionary_lookup_long_keys() {
+        let dict = k!(dict:
+            k!(long: vec![100, 200, 300]) =>
+            k!([k!(float: 1.1), k!(float: 2.2), k!(float: 3.3)])
+        );
+
+        let key = k!(long: 200);
+        let value = &dict[&key];
+        assert!((value.get_float().unwrap() - 2.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    #[should_panic(expected = "not found")]
+    fn test_dictionary_lookup_missing_key() {
+        let dict = k!(dict:
+            k!(sym: vec!["a", "b"]) =>
+            k!([k!(long: 10), k!(long: 20)])
+        );
+
+        let missing_key = k!(sym: "z");
+        let _ = &dict[&missing_key]; // Should panic
+    }
+
+    #[test]
+    fn test_try_find_safe() {
+        let dict = k!(dict:
+            k!(sym: vec!["x", "y", "z"]) =>
+            k!([k!(long: 1), k!(long: 2), k!(long: 3)])
+        );
+
+        let key1 = k!(sym: "y");
+        assert!(dict.try_find(&key1).is_ok());
+        assert_eq!(dict.try_find(&key1).unwrap().get_long().unwrap(), 2);
+
+        let missing_key = k!(sym: "missing");
+        assert!(dict.try_find(&missing_key).is_err());
     }
 }

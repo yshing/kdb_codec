@@ -111,13 +111,13 @@
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
 // Base modules - must come first
+mod conversions;
 pub mod error;
+mod index;
+mod macros;
 mod qconsts;
 mod qnull_inf;
 mod types;
-mod conversions;
-mod macros;
-mod index;
 
 // IPC modules
 mod codec;
@@ -136,9 +136,9 @@ pub use qconsts::{qattribute, qinf_base, qninf_base, qnull_base, qtype};
 // Re-export qnull_inf modules at root level
 pub use qnull_inf::{qinf, qninf, qnull};
 
-// Re-export types  
-pub use types::{C, E, F, G, H, I, J, K, S, U, Result};
+// Re-export types
 pub use error::Error;
+pub use types::{Result, C, E, F, G, H, I, J, K, S, U};
 // Re-export internal types for use within the crate
 pub(crate) use types::{k0, k0_inner, k0_list, AsAny, Klone};
 

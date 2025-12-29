@@ -54,10 +54,7 @@ async fn main() -> Result<()> {
     // Example 2: Send another K object query
     let query2 = KdbMessage::new(
         qmsg_type::synchronous,
-        K::new_compound_list(vec![
-            K::new_symbol(String::from("til")),
-            K::new_long(5),
-        ]),
+        K::new_compound_list(vec![K::new_symbol(String::from("til")), K::new_long(5)]),
     );
 
     framed

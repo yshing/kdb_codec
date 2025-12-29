@@ -22,7 +22,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
-use tokio_native_tls::native_tls::{Identity, TlsAcceptor as TlsAcceptorInner, TlsConnector as TlsConnectorInner};
+use tokio_native_tls::native_tls::{
+    Identity, TlsAcceptor as TlsAcceptorInner, TlsConnector as TlsConnectorInner,
+};
 use tokio_native_tls::{TlsAcceptor, TlsConnector, TlsStream};
 use tokio_util::codec::Framed;
 use trust_dns_resolver::TokioAsyncResolver;
@@ -210,11 +212,7 @@ impl Query for K {
 #[bon::bon]
 impl QStream {
     /// General constructor of `QStream`.
-    fn new(
-        stream: FramedStream,
-        method: ConnectionMethod,
-        is_listener: bool,
-    ) -> Self {
+    fn new(stream: FramedStream, method: ConnectionMethod, is_listener: bool) -> Self {
         QStream {
             stream,
             method,
@@ -553,11 +551,8 @@ impl QStream {
                 // TLS is always a remote connection
                 let codec = KdbCodec::with_options(false, compression_mode, validation_mode);
                 let framed = Framed::new(tls_socket, codec);
-                let mut qstream = QStream::new(
-                    FramedStream::Tls(framed),
-                    ConnectionMethod::TLS,
-                    true,
-                );
+                let mut qstream =
+                    QStream::new(FramedStream::Tls(framed), ConnectionMethod::TLS, true);
                 // In order to close the connection from the server side, it needs to tell a client to close the connection.
                 // The `kdbplus_close_tls_connection_` will be called from the server at shutdown.
                 qstream
@@ -597,9 +592,10 @@ impl QStream {
     pub async fn shutdown(mut self) -> Result<()> {
         // For TLS listener, send the close command
         if self.listener && matches!(self.method, ConnectionMethod::TLS) {
-            self.send_async_message(&".kdbplus.close_tls_connection_[]").await?;
+            self.send_async_message(&".kdbplus.close_tls_connection_[]")
+                .await?;
         }
-        
+
         // Close the underlying stream
         match self.stream {
             FramedStream::Tcp(framed) => {
@@ -670,14 +666,15 @@ impl QStream {
     pub async fn send_sync_message(&mut self, message: &dyn Query) -> Result<K> {
         // Send the synchronous message
         self.send_message(message, qmsg_type::synchronous).await?;
-        
+
         // Receive the response
         match self.receive_message().await? {
             (qmsg_type::response, response) => Ok(response),
             (_, message) => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("expected a response: {}", message),
-            ).into()),
+            )
+            .into()),
         }
     }
 
@@ -687,46 +684,40 @@ impl QStream {
     /// See the example of [`accept`](#method.accept).
     pub async fn receive_message(&mut self) -> Result<(u8, K)> {
         match &mut self.stream {
-            FramedStream::Tcp(framed) => {
-                match framed.next().await {
-                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
-                    Some(Err(e)) => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        format!("Connection dropped: {}", e),
-                    ).into()),
-                    None => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        "Connection closed",
-                    ).into()),
-                }
-            }
-            FramedStream::Tls(framed) => {
-                match framed.next().await {
-                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
-                    Some(Err(e)) => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        format!("Connection dropped: {}", e),
-                    ).into()),
-                    None => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        "Connection closed",
-                    ).into()),
-                }
-            }
+            FramedStream::Tcp(framed) => match framed.next().await {
+                Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                Some(Err(e)) => Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    format!("Connection dropped: {}", e),
+                )
+                .into()),
+                None => Err(
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
+                ),
+            },
+            FramedStream::Tls(framed) => match framed.next().await {
+                Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                Some(Err(e)) => Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    format!("Connection dropped: {}", e),
+                )
+                .into()),
+                None => Err(
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
+                ),
+            },
             #[cfg(unix)]
-            FramedStream::Uds(framed) => {
-                match framed.next().await {
-                    Some(Ok(response)) => Ok((response.message_type, response.payload)),
-                    Some(Err(e)) => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        format!("Connection dropped: {}", e),
-                    ).into()),
-                    None => Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        "Connection closed",
-                    ).into()),
-                }
-            }
+            FramedStream::Uds(framed) => match framed.next().await {
+                Some(Ok(response)) => Ok((response.message_type, response.payload)),
+                Some(Err(e)) => Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    format!("Connection dropped: {}", e),
+                )
+                .into()),
+                None => Err(
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed").into(),
+                ),
+            },
         }
     }
 

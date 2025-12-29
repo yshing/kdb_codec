@@ -27,17 +27,14 @@ async fn main() -> Result<()> {
         for i in 0..5 {
             let query = KdbMessage::new(
                 qmsg_type::synchronous,
-                K::new_compound_list(vec![
-                    K::new_symbol(String::from("til")),
-                    K::new_long(i),
-                ]),
+                K::new_compound_list(vec![K::new_symbol(String::from("til")), K::new_long(i)]),
             );
-            
+
             if tx.send(query).await.is_err() {
                 eprintln!("Receiver dropped");
                 break;
             }
-            
+
             // Simulate some delay between messages
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
@@ -65,7 +62,7 @@ async fn forward_messages_safely(
     mut framed: Framed<TcpStream, KdbCodec>,
 ) -> Result<()> {
     let mut messages_sent = 0;
-    
+
     loop {
         tokio::select! {
             // Receive message from channel
@@ -78,15 +75,15 @@ async fn forward_messages_safely(
                             .feed(msg)
                             .await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
-                        
+
                         // Step 2: flush() sends all buffered messages
                         // After this point, the message is guaranteed sent
                         SinkExt::<KdbMessage>::flush(&mut framed)
                             .await
                             .map_err(|e| Error::NetworkError(e.to_string()))?;
-                        
+
                         messages_sent += 1;
-                        
+
                         // Step 3: Receive response
                         if let Some(result) = framed.next().await {
                             match result {
@@ -108,7 +105,7 @@ async fn forward_messages_safely(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -126,7 +123,7 @@ async fn unsafe_batching_example(
                     // This batches messages, which might not be what you want
                     framed.feed(msg).await
                         .map_err(|e| Error::NetworkError(e.to_string()))?;
-                    
+
                     // If you receive more messages before flush(), they accumulate
                     // and are all sent together on the next flush()
                 } else {
@@ -135,11 +132,12 @@ async fn unsafe_batching_example(
             }
         }
     }
-    
+
     // All buffered messages sent here
-    SinkExt::<KdbMessage>::flush(&mut framed).await
+    SinkExt::<KdbMessage>::flush(&mut framed)
+        .await
         .map_err(|e| Error::NetworkError(e.to_string()))?;
-    
+
     Ok(())
 }
 
@@ -151,7 +149,7 @@ async fn safe_batching_example(
 ) -> Result<()> {
     const BATCH_SIZE: usize = 10;
     let mut batch_count = 0;
-    
+
     loop {
         tokio::select! {
             msg_opt = rx.recv() => {
@@ -160,7 +158,7 @@ async fn safe_batching_example(
                     framed.feed(msg).await
                         .map_err(|e| Error::NetworkError(e.to_string()))?;
                     batch_count += 1;
-                    
+
                     // Flush after reaching batch size
                     if batch_count >= BATCH_SIZE {
                         SinkExt::<KdbMessage>::flush(&mut framed).await
@@ -180,6 +178,6 @@ async fn safe_batching_example(
             }
         }
     }
-    
+
     Ok(())
 }

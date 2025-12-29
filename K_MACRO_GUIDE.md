@@ -60,6 +60,30 @@ let floats = k!(float: vec![1.1, 2.2, 3.3]);
 let symbols = k!(sym: vec!["apple", "banana", "cherry"]);
 ```
 
+### Lists with Repetition Syntax
+
+**New in v0.3.0:** Create large lists efficiently using `vec![value; count]` syntax:
+
+```rust
+use kdb_codec::*;
+
+// Create a list with 3000 copies of 42
+let large_list = k!(long: vec![42; 3000]);
+
+// Works with all types
+let int_list = k!(int: vec![10; 100]);
+let float_list = k!(float: vec![3.14; 50]);
+let sym_list = k!(sym: vec!["test"; 10]);
+
+// Also works with attributes
+let sorted = k!(long: vec![1; 2500]; @sorted);
+```
+
+This is particularly useful for:
+- Creating test data
+- Initializing large buffers
+- Performance benchmarks
+
 ### Lists with Attributes
 
 Add q attributes using the `@attribute` syntax:

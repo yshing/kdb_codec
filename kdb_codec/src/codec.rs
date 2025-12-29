@@ -10,7 +10,7 @@
 
 use super::deserialize_sync::q_ipc_decode_sync;
 use super::serialize::ENCODING;
-use super::{qtype, Error, K, Result};
+use super::{Error, Result, K};
 use bytes::{BufMut, BytesMut};
 use std::convert::TryInto;
 use std::io;
@@ -420,9 +420,9 @@ pub fn io_error_to_kdb_error(err: io::Error) -> Error {
 /// Compress body synchronously. The combination of serializing the data and compressing will result in
 /// the same output as shown in the q language by using the -18! function e.g.
 /// serializing 2000 bools set to true, then compressing, will have the same output as `-18!2000#1b`.
-/// 
+///
 /// # Data Format Flow
-/// 
+///
 /// **Input (`raw`):**
 /// ```text
 /// [Header: 8 bytes][Payload: N bytes]
@@ -432,7 +432,7 @@ pub fn io_error_to_kdb_error(err: io::Error) -> Error {
 ///  ├─ byte 3: reserved
 ///  └─ bytes 4-7: length (placeholder, not used)
 /// ```
-/// 
+///
 /// **Output (when compressed successfully):**
 /// ```text
 /// [Header: 8 bytes][Uncompressed Size: 4 bytes][Compressed Payload]
@@ -444,24 +444,24 @@ pub fn io_error_to_kdb_error(err: io::Error) -> Error {
 ///  ├─ bytes 8-11: original uncompressed size (including original 8-byte header)
 ///  └─ bytes 12+: compressed payload data
 /// ```
-/// 
+///
 /// **Output (when compression fails - compressed size >= half of original):**
 /// Returns `(false, original_raw_with_corrected_length)` where bytes 4-7 contain the actual total size.
-/// 
+///
 /// # Usage in Encoder/Decoder
-/// 
+///
 /// **Encoder:** Creates `raw` and calls this function. If compression succeeds, writes entire output to network.
-/// 
+///
 /// **Decoder:** Reads from network, parses header (bytes 0-7), then passes bytes 8+ to `decompress_sync()`.
-/// 
+///
 /// # Parameters
 /// - `raw`: Serialized message (including header).
-/// 
+///
 /// # Returns
 /// - `(bool, Vec<u8>)`: Tuple of (compressed successfully, resulting bytes)
 ///   - If compression reduces size to less than half: `(true, compressed_data)`
 ///   - If compression doesn't save enough space: `(false, original_data)`
-/// 
+///
 /// # Note
 /// This function implements the kdb+ IPC compression algorithm which has been tested
 /// in production and is compatible with kdb+ -18! function.
@@ -563,24 +563,24 @@ pub fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
 
 /// Decompress body synchronously. The combination of decompressing and deserializing the data
 /// will result in the same output as shown in the q language by using the `-19!` function.
-/// 
+///
 /// # Data Format Flow
-/// 
+///
 /// **Input (`compressed`):**
 /// ```text
 /// [Uncompressed Size: 4 bytes][Compressed Payload]
 ///  ├─ bytes 0-3: original uncompressed size (including the original 8-byte header that was removed)
 ///  └─ bytes 4+: compressed payload data
 /// ```
-/// 
+///
 /// **Output:**
 /// ```text
 /// [Decompressed Payload: N bytes]
 /// (The original 8-byte header is NOT included in the output)
 /// ```
-/// 
+///
 /// # Usage in Decoder
-/// 
+///
 /// The Decoder:
 /// 1. Reads complete message from network: `[Header: 8 bytes][Uncompressed Size: 4 bytes][Compressed Payload]`
 /// 2. Parses and validates the header (bytes 0-7)
@@ -588,18 +588,18 @@ pub fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
 /// 4. Passes this payload data to `decompress_sync()`
 /// 5. Receives decompressed payload (without header)
 /// 6. Deserializes the payload into a K object
-/// 
+///
 /// # Parameters
 /// - `compressed`: Compressed serialized message (**header already removed**, starts with uncompressed size).
 /// - `encoding`:
 ///   - `0`: Big Endian
 ///   - `1`: Little Endian.
-/// 
+///
 /// # Panics
 /// This function will panic if the compressed data is malformed. This includes:
 /// - Size field less than 8 bytes
 /// - Invalid format that doesn't match kdb+ compression structure
-/// 
+///
 /// # Note
 /// This function implements the kdb+ IPC compression algorithm which has been tested
 /// in production. Future improvements could include returning Result for better error handling.
@@ -617,27 +617,26 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     // Read the uncompressed size from the compressed data
     // Subtract 8 bytes from decoded bytes size as 8 bytes have already been taken as header
     let size_with_header = match encoding {
-        0 => {
-            i32::from_be_bytes(
-                compressed[0..4]
-                    .try_into()
-                    .expect("Invalid compressed data: header size field must be 4 bytes"),
-            )
-        }
-        _ => {
-            i32::from_le_bytes(
-                compressed[0..4]
-                    .try_into()
-                    .expect("Invalid compressed data: header size field must be 4 bytes"),
-            )
-        }
+        0 => i32::from_be_bytes(
+            compressed[0..4]
+                .try_into()
+                .expect("Invalid compressed data: header size field must be 4 bytes"),
+        ),
+        _ => i32::from_le_bytes(
+            compressed[0..4]
+                .try_into()
+                .expect("Invalid compressed data: header size field must be 4 bytes"),
+        ),
     };
-    
+
     // Validate size is positive and reasonable
     if size_with_header < 8 {
-        panic!("Invalid compressed data: size {} is less than minimum header size", size_with_header);
+        panic!(
+            "Invalid compressed data: size {} is less than minimum header size",
+            size_with_header
+        );
     }
-    
+
     let size = (size_with_header - 8) as usize;
     let mut decompressed: Vec<u8> = Vec::with_capacity(size);
     // Assure that vector is filled with 0
@@ -695,12 +694,12 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{qattribute, qmsg_type};
+    use crate::{k, qmsg_type};
 
     #[test]
     fn test_compress_decompress_roundtrip() {
         // Create a message with a large K object that should be compressed
-        let large_list = K::new_long_list(vec![1; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![1; 3000]);
         let message = KdbMessage::new(1, large_list); // synchronous message
 
         // Encode the message (this should trigger compression for non-local)
@@ -727,7 +726,7 @@ mod tests {
     #[test]
     fn test_small_message_no_compression() {
         // Create a small message that should NOT be compressed
-        let small_list = K::new_long_list(vec![1, 2, 3, 4, 5], qattribute::NONE);
+        let small_list = k!(long: vec![1, 2, 3, 4, 5]);
         let message = KdbMessage::new(1, small_list);
 
         // Encode the message
@@ -750,7 +749,7 @@ mod tests {
     #[test]
     fn test_local_connection_no_compression() {
         // Create a large message with local connection
-        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![42; 3000]);
         let message = KdbMessage::new(1, large_list);
 
         // Encode with local connection (compression disabled)
@@ -778,7 +777,7 @@ mod tests {
         let mut buffer = BytesMut::new();
 
         // Create a KdbMessage with a string query
-        let query = K::new_string("1+1".to_string(), 0);
+        let query = k!(string: "1+1");
         let message = KdbMessage::new(qmsg_type::synchronous, query);
 
         // Encode the message
@@ -818,53 +817,76 @@ mod tests {
     fn test_compress_decompress_direct() {
         // Test compress_sync and decompress_sync directly to validate the data format
         // Use large enough data to trigger compression
-        
+
         // Create a raw message: header + payload (large enough to compress)
         let payload = vec![42u8; 2000]; // Repetitive data compresses well
         let mut raw = Vec::new();
         // Header: encoding, message_type, compressed=0, reserved, length (placeholder)
         raw.extend_from_slice(&[ENCODING, 1, 0, 0, 0, 0, 0, 0]);
         raw.extend_from_slice(&payload);
-        
+
         let original_size = raw.len();
-        
+
         // Compress it
         let (was_compressed, compressed_data) = compress_sync(raw.clone());
-        
+
         println!("Original size: {}", original_size);
         println!("Compressed data size: {}", compressed_data.len());
         println!("Was compressed: {}", was_compressed);
-        
+
         // Should be compressed (repetitive data compresses well)
         assert!(was_compressed, "Large repetitive data should compress");
-        
+
         // Verify compressed format
         // Bytes 0-3: encoding, message_type, compressed=1, reserved
         assert_eq!(compressed_data[0], ENCODING);
         assert_eq!(compressed_data[1], 1); // message type
         assert_eq!(compressed_data[2], 1); // compressed flag
-        
+
         // Bytes 4-7: total compressed size (including header)
         let compressed_size = match ENCODING {
-            0 => u32::from_be_bytes([compressed_data[4], compressed_data[5], compressed_data[6], compressed_data[7]]),
-            _ => u32::from_le_bytes([compressed_data[4], compressed_data[5], compressed_data[6], compressed_data[7]]),
+            0 => u32::from_be_bytes([
+                compressed_data[4],
+                compressed_data[5],
+                compressed_data[6],
+                compressed_data[7],
+            ]),
+            _ => u32::from_le_bytes([
+                compressed_data[4],
+                compressed_data[5],
+                compressed_data[6],
+                compressed_data[7],
+            ]),
         };
         assert_eq!(compressed_size as usize, compressed_data.len());
-        
+
         // Bytes 8-11: original uncompressed size (including header)
         let uncompressed_size = match ENCODING {
-            0 => u32::from_be_bytes([compressed_data[8], compressed_data[9], compressed_data[10], compressed_data[11]]),
-            _ => u32::from_le_bytes([compressed_data[8], compressed_data[9], compressed_data[10], compressed_data[11]]),
+            0 => u32::from_be_bytes([
+                compressed_data[8],
+                compressed_data[9],
+                compressed_data[10],
+                compressed_data[11],
+            ]),
+            _ => u32::from_le_bytes([
+                compressed_data[8],
+                compressed_data[9],
+                compressed_data[10],
+                compressed_data[11],
+            ]),
         };
         assert_eq!(uncompressed_size as usize, original_size);
-        
+
         // Now decompress - skip header (bytes 0-7) to simulate what Decoder does
         // This is the KEY insight: Decoder removes the header before calling decompress_sync
         let payload_data = &compressed_data[HEADER_SIZE..];
         let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
-        
+
         // The decompressed data should match the original payload (without header)
-        assert_eq!(decompressed, payload, "Decompressed payload should match original");
+        assert_eq!(
+            decompressed, payload,
+            "Decompressed payload should match original"
+        );
     }
 
     #[test]
@@ -874,24 +896,27 @@ mod tests {
         let mut raw = Vec::new();
         raw.extend_from_slice(&[ENCODING, 1, 0, 0, 0, 0, 0, 0]);
         raw.extend_from_slice(&large_payload);
-        
+
         let original_size = raw.len();
-        
+
         // Compress
         let (was_compressed, compressed_data) = compress_sync(raw);
-        
+
         // Should be compressed (large data with repetition compresses well)
         assert!(was_compressed, "Large repetitive data should compress");
-        
+
         // Compressed size should be less than original
-        assert!(compressed_data.len() < original_size, 
-            "Compressed size {} should be less than original size {}", 
-            compressed_data.len(), original_size);
-        
+        assert!(
+            compressed_data.len() < original_size,
+            "Compressed size {} should be less than original size {}",
+            compressed_data.len(),
+            original_size
+        );
+
         // Decompress - skip the header as Decoder does
         let payload_data = &compressed_data[HEADER_SIZE..];
         let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
-        
+
         // Should match original payload
         assert_eq!(decompressed, large_payload);
     }
@@ -899,25 +924,25 @@ mod tests {
     #[test]
     fn test_codec_with_compression_end_to_end() {
         // Full end-to-end test through the codec
-        let large_list = K::new_long_list(vec![123; 2500], qattribute::NONE);
+        let large_list = k!(long: vec![123; 2500]);
         let message = KdbMessage::new(qmsg_type::synchronous, large_list.clone());
-        
+
         // Encode (should compress for non-local connection)
         let mut codec = KdbCodec::new(false);
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
-        
+
         // Verify compression flag is set
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
         assert_eq!(header.compressed, 1, "Large message should be compressed");
-        
+
         // Decode
         let decoded = codec.decode(&mut buffer).unwrap();
         assert!(decoded.is_some());
-        
+
         let response = decoded.unwrap();
         assert_eq!(response.message_type, qmsg_type::synchronous);
-        
+
         // Verify payload matches
         let decoded_list = response.payload.as_vec::<i64>().unwrap();
         assert_eq!(decoded_list.len(), 2500);
@@ -928,11 +953,12 @@ mod tests {
     #[test]
     fn test_compression_mode_never() {
         // Test that Never mode doesn't compress even large messages
-        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![42; 3000]);
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Never mode
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
@@ -944,23 +970,27 @@ mod tests {
     #[test]
     fn test_compression_mode_always() {
         // Test that Always mode compresses large messages even on local connections
-        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![42; 3000]);
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Always mode with local connection
-        let mut codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
         // Check compression flag should be 1 (if compression succeeded)
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
-        assert_eq!(header.compressed, 1, "Always mode should compress even on local");
+        assert_eq!(
+            header.compressed, 1,
+            "Always mode should compress even on local"
+        );
     }
 
     #[test]
     fn test_compression_mode_auto_local() {
         // Test that Auto mode doesn't compress on local connections
-        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![42; 3000]);
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Auto mode with local connection
@@ -970,29 +1000,37 @@ mod tests {
 
         // Check compression flag should be 0
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
-        assert_eq!(header.compressed, 0, "Auto mode should not compress local connections");
+        assert_eq!(
+            header.compressed, 0,
+            "Auto mode should not compress local connections"
+        );
     }
 
     #[test]
     fn test_compression_mode_auto_remote() {
         // Test that Auto mode compresses large messages on remote connections
-        let large_list = K::new_long_list(vec![42; 3000], qattribute::NONE);
+        let large_list = k!(long: vec![42; 3000]);
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Auto mode with remote connection
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
         // Check compression flag should be 1
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
-        assert_eq!(header.compressed, 1, "Auto mode should compress remote large messages");
+        assert_eq!(
+            header.compressed, 1,
+            "Auto mode should compress remote large messages"
+        );
     }
 
     #[test]
     fn test_validation_mode_strict_invalid_compressed() {
         // Test that strict mode rejects invalid compressed flag
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
 
         // Create a message with invalid compressed flag (2)
@@ -1002,16 +1040,23 @@ mod tests {
 
         // Try to decode - should fail
         let result = codec.decode(&mut buffer);
-        assert!(result.is_err(), "Strict mode should reject invalid compressed flag");
+        assert!(
+            result.is_err(),
+            "Strict mode should reject invalid compressed flag"
+        );
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Invalid compressed flag"), 
-            "Error message should mention compressed flag, got: {}", err);
+        assert!(
+            err.to_string().contains("Invalid compressed flag"),
+            "Error message should mention compressed flag, got: {}",
+            err
+        );
     }
 
     #[test]
     fn test_validation_mode_strict_invalid_message_type() {
         // Test that strict mode rejects invalid message type
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
 
         // Create a message with invalid message type (3)
@@ -1021,26 +1066,33 @@ mod tests {
 
         // Try to decode - should fail
         let result = codec.decode(&mut buffer);
-        assert!(result.is_err(), "Strict mode should reject invalid message type");
+        assert!(
+            result.is_err(),
+            "Strict mode should reject invalid message type"
+        );
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Invalid message type"), 
-            "Error message should mention message type, got: {}", err);
+        assert!(
+            err.to_string().contains("Invalid message type"),
+            "Error message should mention message type, got: {}",
+            err
+        );
     }
 
     #[test]
     fn test_validation_mode_lenient_accepts_invalid() {
         // Test that lenient mode accepts invalid values
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Lenient);
-        
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Lenient);
+
         // Create a small valid K object for the payload
-        let small_int = K::new_int(42);
+        let small_int = k!(int: 42);
         let payload_bytes = small_int.q_ipc_encode();
         let total_length = (HEADER_SIZE + payload_bytes.len()) as u32;
-        
+
         let mut buffer = BytesMut::new();
         // Create a message with "invalid" values that lenient mode should accept
         buffer.extend_from_slice(&[ENCODING, 5, 3, 0]); // message_type = 5, compressed = 3 (both "invalid")
-        
+
         // Add length
         let length_bytes = match ENCODING {
             0 => total_length.to_be_bytes(),
@@ -1051,23 +1103,29 @@ mod tests {
 
         // Try to decode - should succeed in lenient mode
         let result = codec.decode(&mut buffer);
-        assert!(result.is_ok(), "Lenient mode should accept non-standard values");
-        assert!(result.unwrap().is_some(), "Should decode message successfully");
+        assert!(
+            result.is_ok(),
+            "Lenient mode should accept non-standard values"
+        );
+        assert!(
+            result.unwrap().is_some(),
+            "Should decode message successfully"
+        );
     }
 
     #[test]
     fn test_codec_getters_setters() {
         // Test getting and setting modes
         let mut codec = KdbCodec::new(false);
-        
+
         // Check defaults
         assert_eq!(codec.compression_mode(), CompressionMode::Auto);
         assert_eq!(codec.validation_mode(), ValidationMode::Strict);
-        
+
         // Set new modes
         codec.set_compression_mode(CompressionMode::Always);
         codec.set_validation_mode(ValidationMode::Lenient);
-        
+
         // Verify changes
         assert_eq!(codec.compression_mode(), CompressionMode::Always);
         assert_eq!(codec.validation_mode(), ValidationMode::Lenient);
@@ -1076,17 +1134,21 @@ mod tests {
     #[test]
     fn test_compression_mode_small_message() {
         // Test that even Always mode doesn't compress very small messages
-        let small_int = K::new_int(42);
+        let small_int = k!(int: 42);
         let message = KdbMessage::new(qmsg_type::synchronous, small_int);
 
         // Use Always mode
-        let mut codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
+        let mut codec =
+            KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
         // Small messages should not be compressed (below threshold)
         let header = MessageHeader::from_bytes(&buffer[..HEADER_SIZE]).unwrap();
-        assert_eq!(header.compressed, 0, "Small messages should not be compressed");
+        assert_eq!(
+            header.compressed, 0,
+            "Small messages should not be compressed"
+        );
     }
 
     #[test]

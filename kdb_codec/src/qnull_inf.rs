@@ -588,4 +588,3 @@ pub mod qninf {
     /// ```
     pub const TIME: Lazy<Duration> = Lazy::new(|| Duration::milliseconds(qninf_base::I as i64));
 }
-

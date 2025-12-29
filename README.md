@@ -36,6 +36,7 @@ The Framed pattern maintains internal buffer state, so cancelled reads never los
 - **Cancellation Safe**: Built on `tokio-util::codec::Framed` for true cancellation safety
 - **Tokio Codec Pattern**: Modern async/await interface with proper buffer management
 - **QStream Client**: High-level async client for q/kdb+ communication
+- **Intuitive Data Access**: Index trait for ergonomic K object access with `[]` syntax
 - **Full Compression Support**: Compatible with kdb+ `-18!` (compress) and `-19!` (decompress)
 - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 - **Type-Safe**: Strong typing for all kdb+ data types
@@ -225,6 +226,131 @@ tokio::spawn(async move {
 
 writer.send(msg).await?;
 ```
+
+## Intuitive Data Access with Index Trait
+
+The library implements Rust's `Index` and `IndexMut` traits for ergonomic access to K object data using familiar `[]` syntax.
+
+### Dictionary Access
+
+Access dictionary keys and values directly using numeric indices:
+
+```rust
+use kdb_codec::*;
+
+// Create a dictionary using k! macro
+let dict = k!(dict: k!(sym: vec!["a", "b", "c"]) => k!(long: vec![10, 20, 30]));
+
+// Access keys and values using [] syntax
+let keys = &dict[0];    // Get dictionary keys
+let values = &dict[1];  // Get dictionary values
+
+println!("Keys: {}", keys);      // `a`b`c
+println!("Values: {}", values);  // 10 20 30
+
+// Mutable access
+let mut dict = k!(dict: k!(sym: vec!["x"]) => k!(long: vec![42]));
+dict[1] = k!(long: vec![100]);  // Replace values
+```
+
+### Table Column Access
+
+Access table columns by name using string indices:
+
+```rust
+use kdb_codec::*;
+
+// Create a table
+let table = k!(table: {
+    "fruit" => k!(sym: vec!["apple", "banana", "cherry"]),
+    "price" => k!(float: vec![1.5, 2.3, 3.8]),
+    "quantity" => k!(long: vec![100, 150, 75])
+});
+
+// Access columns by name
+let fruits = &table["fruit"];
+let prices = &table["price"];
+let quantities = &table["quantity"];
+
+println!("Fruits: {}", fruits);        // `apple`banana`cherry
+println!("Prices: {}", prices);        // 1.5 2.3 3.8
+println!("Quantities: {}", quantities); // 100 150 75
+
+// Mutable access
+let mut table = k!(table: {
+    "price" => k!(float: vec![1.5, 2.3])
+});
+table["price"] = k!(float: vec![2.0, 2.5]);  // Update prices
+```
+
+### Safe Access Methods
+
+For production code, use the safe `try_*` methods that return `Result` instead of panicking:
+
+```rust
+use kdb_codec::*;
+
+let dict = k!(dict: k!(sym: vec!["x", "y"]) => k!(long: vec![10, 20]));
+
+// Safe dictionary access
+match dict.try_index(0) {
+    Ok(keys) => println!("Keys: {}", keys),
+    Err(e) => eprintln!("Error: {:?}", e),
+}
+
+// Try accessing out of bounds - won't panic
+if dict.try_index(2).is_err() {
+    println!("Index 2 is out of bounds");
+}
+
+// Safe table column access
+let table = k!(table: {
+    "name" => k!(sym: vec!["Alice", "Bob"])
+});
+
+match table.try_column("name") {
+    Ok(col) => println!("Names: {}", col),
+    Err(_) => println!("Column not found"),
+}
+
+// Check if column exists before accessing
+if table.try_column("nonexistent").is_err() {
+    println!("Column 'nonexistent' not found");
+}
+```
+
+### Compound List Access
+
+Access elements in compound (heterogeneous) lists:
+
+```rust
+use kdb_codec::*;
+
+let list = k!([
+    k!(long: 100),
+    k!(float: 3.14),
+    k!(sym: "hello"),
+    k!(bool: vec![true, false, true])
+]);
+
+// Safe access to list elements
+if let Ok(first) = list.try_index(0) {
+    println!("First element: {}", first);  // 100
+}
+
+if let Ok(second) = list.try_index(1) {
+    println!("Second element: {}", second); // 3.14
+}
+```
+
+**Benefits:**
+- ✅ Ergonomic `[]` syntax familiar to Rust developers
+- ✅ Type-safe with compile-time borrow checking
+- ✅ Both panicking (`[]`) and safe (`try_*`) variants available
+- ✅ Works seamlessly with mutable access
+- ✅ Supports dictionaries, tables, and compound lists
+
+See `examples/index_trait_demo.rs` for more examples.
 
 ### Connection Methods
 
