@@ -117,6 +117,7 @@ mod qnull_inf;
 mod types;
 mod conversions;
 mod macros;
+mod index;
 
 // IPC modules
 mod codec;
