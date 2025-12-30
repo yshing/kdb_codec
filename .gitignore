@@ -7,3 +7,9 @@ ipc_examples/target/
 ipc_examples/Cargo.lock
 tests/libapi_examples.so
 Cargo.lock
+
+# Docs build artifacts
+docs/node_modules
+docs/.next
+docs/out
+docs/.source
