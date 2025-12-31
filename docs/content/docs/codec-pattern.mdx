@@ -16,7 +16,6 @@ The kdb-codec implementation provides a clean, idiomatic Rust interface for kdb+
 1. **KdbCodec**: The main codec struct implementing `Encoder` and `Decoder` traits
 2. **MessageHeader**: Represents the 8-byte kdb+ IPC message header
 3. **KdbMessage**: Wrapper for outgoing messages (K object + message type)
-4. **KdbResponse**: Wrapper for incoming messages (K object + message type)
 
 ### Benefits of the Codec Pattern
 
@@ -38,21 +37,21 @@ use futures::{SinkExt, StreamExt};
 async fn main() -> Result<()> {
     // Connect to kdb+ process
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
-    
+
     // Wrap with codec
     let codec = KdbCodec::new(true); // true = local connection
     let mut framed = Framed::new(stream, codec);
-    
+
     // Send a text query
     // Note: Using feed() + flush() is cancellation-safe, unlike send()
     framed.feed(("1+1", qmsg_type::synchronous)).await?;
     framed.flush().await?;
-    
+
     // Receive response
     if let Some(Ok(response)) = framed.next().await {
         println!("Result: {}", response.payload);
     }
-    
+
     Ok(())
 }
 ```
@@ -118,7 +117,7 @@ async fn forward_with_split(
 ) -> Result<()> {
     // Split into independent sink (write) and stream (read)
     let (mut sink, mut stream) = framed.split();
-    
+
     // Spawn task to handle responses
     let response_handle = tokio::spawn(async move {
         while let Some(result) = stream.next().await {
@@ -128,13 +127,13 @@ async fn forward_with_split(
             }
         }
     });
-    
+
     // Forward messages from channel to kdb+ (no select! needed)
     while let Some(msg) = rx.recv().await {
         sink.feed(msg).await?;
         sink.flush().await?;
     }
-    
+
     // Wait for response handler to finish
     let _ = response_handle.await;
     Ok(())
@@ -142,6 +141,7 @@ async fn forward_with_split(
 ```
 
 **Benefits:**
+
 - ✅ No `tokio::select!` complexity
 - ✅ Cleaner separation of concerns
 - ✅ Can process responses independently
@@ -181,6 +181,7 @@ let codec = KdbCodec::builder()
 ```
 
 **Compression Modes:**
+
 - `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
 - `Always`: Attempt to compress messages larger than 2000 bytes even on local connections
 - `Never`: Disable compression entirely
@@ -202,6 +203,7 @@ let codec = KdbCodec::builder()
 ```
 
 **Validation Modes:**
+
 - `Strict` (default): Validates that compressed flag is 0 or 1, and message type is 0, 1, or 2
 - `Lenient`: Accepts any header values (useful for debugging or handling non-standard implementations)
 
@@ -215,16 +217,16 @@ use kdb_codec::*;
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut stream = QStream::connect(
-        ConnectionMethod::TCP, 
-        "localhost", 
-        5000, 
+        ConnectionMethod::TCP,
+        "localhost",
+        5000,
         "user:pass"
     ).await?;
-    
+
     // All operations are cancellation safe
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);
-    
+
     Ok(())
 }
 ```
@@ -245,10 +247,10 @@ async fn main() -> Result<()> {
         .validation_mode(ValidationMode::Lenient)
         .connect()
         .await?;
-    
+
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);
-    
+
     Ok(())
 }
 ```
@@ -264,10 +266,10 @@ use bytes::BytesMut;
 fn test_encode_decode() {
     let codec = KdbCodec::new(true);
     let message = KdbMessage::new(qmsg_type::synchronous, K::new_long(42));
-    
+
     let mut buf = BytesMut::new();
     codec.encode(message, &mut buf).unwrap();
-    
+
     let decoded = codec.decode(&mut buf).unwrap().unwrap();
     assert_eq!(decoded.payload.get_long().unwrap(), 42);
 }
@@ -278,12 +280,14 @@ fn test_encode_decode() {
 The existing `QStream` API continues to work. The codec pattern is an alternative approach:
 
 **Traditional QStream:**
+
 ```rust
 let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000, "user:pass").await?;
 let result = socket.send_sync_message(&"1+1").await?;
 ```
 
 **Codec Pattern:**
+
 ```rust
 let stream = TcpStream::connect("127.0.0.1:5000").await?;
 let mut framed = Framed::new(stream, KdbCodec::new(true));
