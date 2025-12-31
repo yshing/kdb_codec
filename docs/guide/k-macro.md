@@ -1,7 +1,4 @@
----
-title: K Macro
-description: Simplified kdb+ Data Construction in Rust
----
+# K Macro
 
 The `k!` macro provides a clean and intuitive way to create kdb+/q data structures in Rust, significantly reducing boilerplate code.
 
@@ -82,11 +79,6 @@ let sym_list = k!(sym: vec!["test"; 10]);
 let sorted = k!(long: vec![1; 2500]; @sorted);
 ```
 
-This is particularly useful for:
-- Creating test data
-- Initializing large buffers
-- Performance benchmarks
-
 ### Lists with Attributes
 
 Add q attributes using the `@attribute` syntax:
@@ -105,68 +97,6 @@ Available attributes:
 - `@unique` - unique attribute (`u#`)
 - `@parted` - parted attribute (`p#`)
 - `@grouped` - grouped attribute (`g#`)
-
-## Temporal Types
-
-The `k!` macro supports all kdb+ temporal types using Rust's `chrono` library.
-
-### Temporal Atoms
-
-```rust
-use kdb_codec::*;
-use chrono::prelude::*;
-use chrono::Duration;
-
-// Timestamp (datetime with nanosecond precision)
-let ts = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()
-    .and_hms_nano_opt(10, 30, 0, 123456789).unwrap()
-    .and_local_timezone(Utc).unwrap();
-let timestamp = k!(timestamp: ts);
-
-// Date
-let date = NaiveDate::from_ymd_opt(2024, 12, 25).unwrap();
-let d = k!(date: date);
-
-// Month
-let month_date = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
-let m = k!(month: month_date);
-
-// Datetime (datetime with millisecond precision)
-let dt = k!(datetime: ts);
-
-// Duration-based types
-let timespan = k!(timespan: Duration::hours(5));
-let minute = k!(minute: Duration::minutes(30));
-let second = k!(second: Duration::seconds(90));
-let time = k!(time: Duration::milliseconds(1000));
-```
-
-### Temporal Lists
-
-```rust
-use kdb_codec::*;
-use chrono::prelude::*;
-use chrono::Duration;
-
-// Date list with sorted attribute
-let dates = vec![
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-    NaiveDate::from_ymd_opt(2024, 6, 15).unwrap(),
-    NaiveDate::from_ymd_opt(2024, 12, 31).unwrap()
-];
-let date_list = k!(date: vec![dates[0], dates[1], dates[2]]; @sorted);
-
-// Timestamp list
-let timestamps = vec![
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
-        .and_hms_opt(9, 30, 0).unwrap()
-        .and_local_timezone(Utc).unwrap(),
-    NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()
-        .and_hms_opt(10, 30, 0).unwrap()
-        .and_local_timezone(Utc).unwrap()
-];
-let ts_list = k!(timestamp: vec![timestamps[0], timestamps[1]]; @sorted);
-```
 
 ## Compound Lists
 
@@ -217,27 +147,6 @@ let table = k!(table: {
     "id" => k!(int: vec![1, 2, 3]),
     "name" => k!(sym: vec!["Alice", "Bob", "Charlie"]),
     "score" => k!(float: vec![95.5, 87.3, 92.1])
-});
-```
-
-### Trading Table Example
-
-```rust
-use kdb_codec::*;
-use chrono::prelude::*;
-
-let trades = k!(table: {
-    "time" => k!(timestamp: vec![
-        NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()
-            .and_hms_opt(9, 30, 0).unwrap()
-            .and_local_timezone(Utc).unwrap(),
-        NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()
-            .and_hms_milli_opt(9, 30, 1, 500).unwrap()
-            .and_local_timezone(Utc).unwrap()
-    ]; @sorted),
-    "symbol" => k!(sym: vec!["AAPL", "GOOGL"]),
-    "price" => k!(float: vec![150.25, 2801.5]),
-    "size" => k!(int: vec![100, 50])
 });
 ```
 

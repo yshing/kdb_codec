@@ -1,23 +1,15 @@
----
-title: Codec Pattern
-description: Tokio Codec Pattern for kdb+ IPC communication
----
-
-This document describes the codec-based architecture for kdb+ IPC communication.
-
-## Overview
+# Codec Pattern
 
 The kdb-codec implementation provides a clean, idiomatic Rust interface for kdb+ IPC communication using the tokio ecosystem's codec pattern. This approach leverages `tokio-util::codec` traits to handle message framing, encoding, and decoding in a streaming fashion.
 
-## Architecture
-
-### Core Components
+## Core Components
 
 1. **KdbCodec**: The main codec struct implementing `Encoder` and `Decoder` traits
 2. **MessageHeader**: Represents the 8-byte kdb+ IPC message header
 3. **KdbMessage**: Wrapper for outgoing messages (K object + message type)
+4. **KdbResponse**: Wrapper for incoming messages (K object + message type)
 
-### Benefits of the Codec Pattern
+## Benefits of the Codec Pattern
 
 - **Cleaner API**: Uses standard Rust streaming abstractions (futures::Sink, futures::Stream)
 - **Better Resource Management**: Automatic buffering and backpressure handling
@@ -37,21 +29,21 @@ use futures::{SinkExt, StreamExt};
 async fn main() -> Result<()> {
     // Connect to kdb+ process
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
-
+    
     // Wrap with codec
     let codec = KdbCodec::new(true); // true = local connection
     let mut framed = Framed::new(stream, codec);
-
+    
     // Send a text query
     // Note: Using feed() + flush() is cancellation-safe, unlike send()
     framed.feed(("1+1", qmsg_type::synchronous)).await?;
     framed.flush().await?;
-
+    
     // Receive response
     if let Some(Ok(response)) = framed.next().await {
         println!("Result: {}", response.payload);
     }
-
+    
     Ok(())
 }
 ```
@@ -101,64 +93,6 @@ tokio::select! {
 }
 ```
 
-## Forwarding Messages from Channels
-
-### Using split() to avoid select! (Recommended)
-
-Split the framed stream into separate read and write halves:
-
-```rust
-use tokio::sync::mpsc;
-use futures::{SinkExt, StreamExt};
-
-async fn forward_with_split(
-    mut rx: mpsc::Receiver<KdbMessage>,
-    framed: Framed<TcpStream, KdbCodec>,
-) -> Result<()> {
-    // Split into independent sink (write) and stream (read)
-    let (mut sink, mut stream) = framed.split();
-
-    // Spawn task to handle responses
-    let response_handle = tokio::spawn(async move {
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(response) => println!("Response: {}", response.payload),
-                Err(e) => eprintln!("Error: {}", e),
-            }
-        }
-    });
-
-    // Forward messages from channel to kdb+ (no select! needed)
-    while let Some(msg) = rx.recv().await {
-        sink.feed(msg).await?;
-        sink.flush().await?;
-    }
-
-    // Wait for response handler to finish
-    let _ = response_handle.await;
-    Ok(())
-}
-```
-
-**Benefits:**
-
-- ✅ No `tokio::select!` complexity
-- ✅ Cleaner separation of concerns
-- ✅ Can process responses independently
-- ✅ More composable and easier to test
-
-## Message Format
-
-The kdb+ IPC protocol uses an 8-byte header:
-
-```
-Byte 0: Encoding (0=Big Endian, 1=Little Endian)
-Byte 1: Message Type (0=Async, 1=Sync, 2=Response)
-Byte 2: Compressed (0=No, 1=Yes)
-Byte 3: Reserved (0x00)
-Bytes 4-7: Total message length (including header)
-```
-
 ## Compression Control
 
 The codec provides explicit control over compression behavior:
@@ -181,7 +115,6 @@ let codec = KdbCodec::builder()
 ```
 
 **Compression Modes:**
-
 - `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
 - `Always`: Attempt to compress messages larger than 2000 bytes even on local connections
 - `Never`: Disable compression entirely
@@ -203,94 +136,17 @@ let codec = KdbCodec::builder()
 ```
 
 **Validation Modes:**
-
 - `Strict` (default): Validates that compressed flag is 0 or 1, and message type is 0, 1, or 2
 - `Lenient`: Accepts any header values (useful for debugging or handling non-standard implementations)
 
-## QStream - High-Level Client
+## Message Format
 
-For a more convenient API, use `QStream` which wraps the codec:
+The kdb+ IPC protocol uses an 8-byte header:
 
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let mut stream = QStream::connect(
-        ConnectionMethod::TCP,
-        "localhost",
-        5000,
-        "user:pass"
-    ).await?;
-
-    // All operations are cancellation safe
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-
-    Ok(())
-}
 ```
-
-**With Builder Pattern (Recommended):**
-
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let mut stream = QStream::builder()
-        .method(ConnectionMethod::TCP)
-        .host("localhost")
-        .port(5000)
-        .credential("user:pass")
-        .compression_mode(CompressionMode::Always)
-        .validation_mode(ValidationMode::Lenient)
-        .connect()
-        .await?;
-
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-
-    Ok(())
-}
-```
-
-## Testing
-
-The codec can be tested independently:
-
-```rust
-use bytes::BytesMut;
-
-#[test]
-fn test_encode_decode() {
-    let codec = KdbCodec::new(true);
-    let message = KdbMessage::new(qmsg_type::synchronous, K::new_long(42));
-
-    let mut buf = BytesMut::new();
-    codec.encode(message, &mut buf).unwrap();
-
-    let decoded = codec.decode(&mut buf).unwrap().unwrap();
-    assert_eq!(decoded.payload.get_long().unwrap(), 42);
-}
-```
-
-## Migration from QStream
-
-The existing `QStream` API continues to work. The codec pattern is an alternative approach:
-
-**Traditional QStream:**
-
-```rust
-let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5000, "user:pass").await?;
-let result = socket.send_sync_message(&"1+1").await?;
-```
-
-**Codec Pattern:**
-
-```rust
-let stream = TcpStream::connect("127.0.0.1:5000").await?;
-let mut framed = Framed::new(stream, KdbCodec::new(true));
-framed.send(("1+1", qmsg_type::synchronous)).await?;
-let result = framed.next().await.unwrap()?.payload;
+Byte 0: Encoding (0=Big Endian, 1=Little Endian)
+Byte 1: Message Type (0=Async, 1=Sync, 2=Response)
+Byte 2: Compressed (0=No, 1=Yes)
+Byte 3: Reserved (0x00)
+Bytes 4-7: Total message length (including header)
 ```

@@ -1,9 +1,4 @@
----
-title: kdb_codec
-description: A Rust library for kdb+ IPC with true cancellation safety
----
-
-import { Cards, Card } from 'fumadocs-ui/components/card';
+# kdb_codec
 
 A Rust library focused on handling the kdb+ IPC (Inter-Process Communication) wire protocol. This library provides efficient encoding, decoding, and communication with q/kdb+ processes using idiomatic Rust patterns.
 
@@ -46,15 +41,6 @@ The Framed pattern maintains internal buffer state, so cancelled reads never los
 - **Minimal Dependencies**: No `async-recursion` or unnecessary proc-macros
 - **Zero-Copy Operations**: Efficient message handling with minimal allocations
 
-## Installation
-
-Add `kdb_codec` to your `Cargo.toml`:
-
-```toml
-[dependencies]
-kdb_codec = "0.4"
-```
-
 ## Quick Example
 
 ```rust
@@ -81,10 +67,9 @@ async fn main() -> Result<()> {
 }
 ```
 
-## What's Next?
+## Next Steps
 
-<Cards>
-  <Card title="Codec Pattern" href="/docs/codec-pattern" description="Learn about the tokio codec architecture" />
-  <Card title="K Macro" href="/docs/k-macro" description="Simplified data construction with the k! macro" />
-  <Card title="Index Trait" href="/docs/index-trait" description="Ergonomic data access with [] syntax" />
-</Cards>
+- [Installation](/guide/installation) - Add kdb_codec to your project
+- [Codec Pattern](/guide/codec-pattern) - Learn about the tokio codec architecture
+- [K Macro](/guide/k-macro) - Simplified data construction
+- [Index Trait](/guide/index-trait) - Ergonomic data access with [] syntax

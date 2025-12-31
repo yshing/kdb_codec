@@ -1,9 +1,4 @@
----
-title: Index Trait
-description: K Object Index Trait Implementation for ergonomic data access
----
-
-## Overview
+# Index Trait
 
 The `Index` and `IndexMut` traits have been implemented for `K` objects to provide intuitive `[]` syntax access to dictionaries and tables.
 
@@ -218,48 +213,7 @@ dict2.set_value(&k!(sym: "a"), k!(int: 99)).unwrap();
 - Code readability is prioritized
 - Dictionary values are compound lists (for `dict[&key]` syntax)
 
-**Use `try_find_owned()` when:**
-- Working with typed list values in dictionaries
-- You need an owned K object (not just a reference)
-- You want to avoid panics and handle missing keys gracefully
-
-**Use `set_value()` when:**
-- You need to update values in typed list dictionaries
-- You want a single method that works with all dictionary value types
-- You want element-wise updates without replacing the entire list
-
 **Use `try_*` methods when:**
 - Working with user input or dynamic data
 - You need to handle missing keys/columns gracefully
 - Building robust production code
-
-## Example: Combining Both Approaches
-
-```rust
-use kdb_codec::*;
-
-fn process_table(table: &K) -> Result<(), Error> {
-    // Use try_* for dynamic column access
-    if let Ok(price_col) = table.try_column("price") {
-        println!("Processing prices: {:?}", price_col);
-    }
-
-    // Use [] for known columns in structured code
-    let required_col = &table["id"];  // Panics if missing - that's a bug
-    println!("ID column: {:?}", required_col);
-
-    Ok(())
-}
-
-// In tests, [] is more readable
-#[test]
-fn test_table_structure() {
-    let table = k!(table: {
-        "id" => k!(long: vec![1, 2, 3]),
-        "name" => k!(sym: vec!["a", "b", "c"])
-    });
-
-    assert_eq!(table["id"].len(), 3);
-    assert_eq!(table["name"].get_type(), qtype::SYMBOL_LIST);
-}
-```

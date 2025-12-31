@@ -1,9 +1,4 @@
----
-title: QStream Client
-description: High-level async client for q/kdb+ communication
----
-
-## Overview
+# QStream Client
 
 `QStream` provides a high-level async client interface for communicating with q/kdb+ processes. It wraps the lower-level codec pattern and provides convenient methods for sending queries and receiving responses.
 
@@ -59,29 +54,6 @@ async fn main() -> Result<()> {
         .validation_mode(ValidationMode::Lenient)
         .connect()
         .await?;
-    
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-    
-    Ok(())
-}
-```
-
-### With Explicit Options
-
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let mut stream = QStream::connect_with_options(
-        ConnectionMethod::TCP, 
-        "localhost", 
-        5000, 
-        "user:pass",
-        CompressionMode::Always,
-        ValidationMode::Lenient
-    ).await?;
     
     let result = stream.send_sync_message(&"2+2").await?;
     println!("Result: {}", result.get_int()?);
@@ -149,7 +121,7 @@ async fn main() -> Result<()> {
 
 Then q clients can connect:
 
-```text
+```
 q)h:hopen `::7000:reluctant:slowday
 ```
 
@@ -165,7 +137,7 @@ reluctant:d03f5cc1cdb11a77410ee34e26ca1102e67a893c
 ```
 
 Generate hashed passwords in q:
-```text
+```
 q).Q.sha1 "slowday"
 0xd03f5cc1cdb11a77410ee34e26ca1102e67a893c
 ```
@@ -181,29 +153,6 @@ q).Q.sha1 "slowday"
 `QUDSPATH` (optional): Defines the abstract namespace for UDS connections:
 - If set: `@${QUDSPATH}/kx.[port]`
 - If not set: `@/tmp/kx.[port]`
-
-## Splitting Streams
-
-For advanced use cases requiring separate send/receive channels:
-
-```rust
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-use futures::{SinkExt, StreamExt};
-
-let stream = TcpStream::connect("127.0.0.1:5000").await?;
-let framed = Framed::new(stream, KdbCodec::new(true));
-let (mut writer, mut reader) = framed.split();
-
-// Use writer and reader independently
-tokio::spawn(async move {
-    while let Some(Ok(msg)) = reader.next().await {
-        println!("Received: {:?}", msg);
-    }
-});
-
-writer.send(msg).await?;
-```
 
 ## Type Mapping
 
@@ -232,9 +181,3 @@ writer.send(msg).await?;
 | `table`      | `Vec<K>`                     |
 | `dictionary` | `Vec<K>`                     |
 | `null`       | `()`                         |
-
-## Notes
-
-- Messages are sent with OS native endian
-- For TLS clients, set `KX_SSL_CERT_FILE` and `KX_SSL_KEY_FILE` on the q side
-- All QStream operations are cancellation safe
