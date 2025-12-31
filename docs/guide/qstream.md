@@ -132,7 +132,7 @@ q)h:hopen `::7000:reluctant:slowday
 `KDBPLUS_ACCOUNT_FILE`: Path to a credential file for authentication. The file contains username and SHA-1 hashed password pairs:
 
 ```
-mattew:431364b6450fc47ccdbf6a2205dfdb1baeb79412
+matthew:431364b6450fc47ccdbf6a2205dfdb1baeb79412
 reluctant:d03f5cc1cdb11a77410ee34e26ca1102e67a893c
 ```
 
