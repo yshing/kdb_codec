@@ -421,7 +421,7 @@ fn deserialize_bytes_sync(
         qtype::MINUTE_ATOM => build_element!(bytes, cursor + 1, encode, qtype::MINUTE_ATOM, i32),
         qtype::SECOND_ATOM => build_element!(bytes, cursor + 1, encode, qtype::SECOND_ATOM, i32),
         qtype::TIME_ATOM => build_element!(bytes, cursor + 1, encode, qtype::TIME_ATOM, i32),
-        qtype::ENUM_ATOM => build_element!(bytes, cursor + 1, encode, qtype::ENUM_ATOM, i32),
+        qtype::ENUM_ATOM => deserialize_enum_atom(bytes, cursor + 1, encode),
         qtype::COMPOUND_LIST => deserialize_compound_list_sync(
             bytes,
             cursor + 1,
@@ -541,14 +541,7 @@ fn deserialize_bytes_sync(
             i32,
             max_list_size
         ),
-        qtype::ENUM_LIST => build_list!(
-            bytes,
-            cursor + 1,
-            encode,
-            qtype::ENUM_LIST,
-            i32,
-            max_list_size
-        ),
+        qtype::ENUM_LIST => deserialize_enum_list(bytes, cursor + 1, encode, max_list_size),
         qtype::TABLE => deserialize_table_sync(
             bytes,
             cursor + 1,
@@ -1029,4 +1022,136 @@ fn deserialize_foreign(
     );
     
     Ok((k, data_cursor + length))
+}
+
+fn deserialize_enum_atom(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
+    // Enum atom format: domain_name (null-terminated) + value (4 bytes)
+    
+    if cursor >= bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 1,
+            available: 0,
+        });
+    }
+
+    // Read domain name (null-terminated string)
+    let null_location = bytes
+        .split_at(cursor)
+        .1
+        .iter()
+        .position(|b| *b == 0x00)
+        .ok_or(Error::MissingNullTerminator)?;
+
+    let domain_name = String::from_utf8(bytes[cursor..cursor + null_location].to_vec())
+        .map_err(|_| Error::InvalidUtf8)?;
+    
+    let value_cursor = cursor + null_location + 1;
+    
+    // Read the 4-byte integer value
+    if value_cursor + 4 > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 4,
+            available: bytes.len().saturating_sub(value_cursor),
+        });
+    }
+    
+    let value_bytes: [u8; 4] = bytes[value_cursor..value_cursor + 4]
+        .try_into()
+        .map_err(|_| Error::DeserializationError("invalid i32 bytes".to_string()))?;
+    
+    let value = match encode {
+        0 => i32::from_be_bytes(value_bytes),
+        _ => i32::from_le_bytes(value_bytes),
+    };
+    
+    let k = K::new_with_domain(
+        qtype::ENUM_ATOM,
+        qattribute::NONE,
+        k0_inner::int(value),
+        Some(domain_name),
+    );
+    
+    Ok((k, value_cursor + 4))
+}
+
+fn deserialize_enum_list(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    // Enum list format: attribute (1) + size (4) + domain_name (null-terminated) + values (size * 4 bytes)
+    
+    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
+    
+    // Read domain name
+    if cursor >= bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 1,
+            available: 0,
+        });
+    }
+
+    let null_location = bytes
+        .split_at(cursor)
+        .1
+        .iter()
+        .position(|b| *b == 0x00)
+        .ok_or(Error::MissingNullTerminator)?;
+
+    let domain_name = String::from_utf8(bytes[cursor..cursor + null_location].to_vec())
+        .map_err(|_| Error::InvalidUtf8)?;
+    
+    let data_cursor = cursor + null_location + 1;
+    
+    // Read the integer values
+    let byte_count = size.checked_mul(4).ok_or(Error::SizeOverflow)?;
+    if data_cursor + byte_count > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: byte_count,
+            available: bytes.len().saturating_sub(data_cursor),
+        });
+    }
+    
+    let slice = &bytes[data_cursor..data_cursor + byte_count];
+    let mut list: Vec<I> = Vec::with_capacity(size);
+    match encode {
+        0 => {
+            let mut iter = slice.chunks_exact(4);
+            for element in &mut iter {
+                let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                    Error::DeserializationError("invalid i32 list bytes".to_string())
+                })?;
+                list.push(i32::from_be_bytes(element_bytes));
+            }
+            if !iter.remainder().is_empty() {
+                return Err(Error::DeserializationError(
+                    "invalid i32 list alignment".to_string(),
+                ));
+            }
+        }
+        _ => {
+            let mut iter = slice.chunks_exact(4);
+            for element in &mut iter {
+                let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                    Error::DeserializationError("invalid i32 list bytes".to_string())
+                })?;
+                list.push(i32::from_le_bytes(element_bytes));
+            }
+            if !iter.remainder().is_empty() {
+                return Err(Error::DeserializationError(
+                    "invalid i32 list alignment".to_string(),
+                ));
+            }
+        }
+    }
+    
+    let k = K::new_with_domain(
+        qtype::ENUM_LIST,
+        attribute,
+        k0_inner::list(k0_list::new(list)),
+        Some(domain_name),
+    );
+    
+    Ok((k, data_cursor + byte_count))
 }

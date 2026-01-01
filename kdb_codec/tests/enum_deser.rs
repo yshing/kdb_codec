@@ -8,14 +8,18 @@ use kdb_codec::*;
 #[test]
 fn test_enum_atom_valid() {
     // Test valid enum atom decode - enum atom is type -20, stores an i32 index
+    // Format: type byte + domain name (null-terminated) + value (4 bytes)
     let value: i32 = 42;
-    let bytes = vec![
-        qtype::ENUM_ATOM as u8,
+    let domain = "sym";
+    let mut bytes = vec![qtype::ENUM_ATOM as u8];
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
+    bytes.extend_from_slice(&[
         (value & 0xFF) as u8,
         ((value >> 8) & 0xFF) as u8,
         ((value >> 16) & 0xFF) as u8,
         ((value >> 24) & 0xFF) as u8,
-    ];
+    ]);
 
     let result = K::q_ipc_decode(&bytes, 1);
     assert!(result.is_ok(), "enum atom decode should succeed");
@@ -33,10 +37,11 @@ fn test_enum_atom_valid() {
 fn test_enum_atom_zero() {
     // Test enum atom with zero value
     let value: i32 = 0;
-    let bytes = vec![
-        qtype::ENUM_ATOM as u8,
-        0x00, 0x00, 0x00, 0x00,
-    ];
+    let domain = "sym";
+    let mut bytes = vec![qtype::ENUM_ATOM as u8];
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
+    bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
 
     let result = K::q_ipc_decode(&bytes, 1);
     assert!(result.is_ok());
@@ -48,10 +53,11 @@ fn test_enum_atom_zero() {
 fn test_enum_atom_negative() {
     // Test enum atom with negative value (null enum)
     let value: i32 = -2147483648; // i32::MIN
-    let bytes = vec![
-        qtype::ENUM_ATOM as u8,
-        0x00, 0x00, 0x00, 0x80, // Little endian i32::MIN
-    ];
+    let domain = "sym";
+    let mut bytes = vec![qtype::ENUM_ATOM as u8];
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
+    bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x80]); // Little endian i32::MIN
 
     let result = K::q_ipc_decode(&bytes, 1);
     assert!(result.is_ok());
@@ -64,6 +70,7 @@ fn test_enum_atom_truncated() {
     // Test enum atom with insufficient bytes
     let bytes = vec![
         qtype::ENUM_ATOM as u8,
+        b's', b'y', b'm', 0x00, // Domain name
         0x01, 0x02, // Only 2 bytes instead of 4
     ];
 
@@ -77,7 +84,9 @@ fn test_enum_atom_truncated() {
 #[test]
 fn test_enum_list_valid_small() {
     // Test valid small enum list - type 20
+    // Format: type + attribute + size + domain name (null-terminated) + values
     let size: u32 = 3;
+    let domain = "sym";
     let mut bytes = vec![
         qtype::ENUM_LIST as u8,
         0x00, // Attribute: none
@@ -86,6 +95,10 @@ fn test_enum_list_valid_small() {
         ((size >> 16) & 0xFF) as u8,
         ((size >> 24) & 0xFF) as u8,
     ];
+    
+    // Add domain name
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
     
     // Add 3 i32 values (12 bytes)
     bytes.extend_from_slice(&[
@@ -114,11 +127,14 @@ fn test_enum_list_valid_small() {
 fn test_enum_list_empty() {
     // Test empty enum list
     let _size: u32 = 0;
-    let bytes = vec![
+    let domain = "sym";
+    let mut bytes = vec![
         qtype::ENUM_LIST as u8,
         0x00, // Attribute: none
         0x00, 0x00, 0x00, 0x00, // Size: 0
     ];
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
 
     let result = K::q_ipc_decode(&bytes, 1);
     assert!(result.is_ok());
@@ -132,6 +148,7 @@ fn test_enum_list_empty() {
 fn test_enum_list_with_sorted_attribute() {
     // Test enum list with sorted attribute
     let size: u32 = 2;
+    let domain = "sym";
     let mut bytes = vec![
         qtype::ENUM_LIST as u8,
         qattribute::SORTED as u8,
@@ -140,6 +157,9 @@ fn test_enum_list_with_sorted_attribute() {
         ((size >> 16) & 0xFF) as u8,
         ((size >> 24) & 0xFF) as u8,
     ];
+    
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
     
     bytes.extend_from_slice(&[
         0x05, 0x00, 0x00, 0x00,
@@ -241,11 +261,15 @@ fn test_enum_list_size_overflow() {
 fn test_enum_list_big_endian() {
     // Test enum list with big-endian encoding
     let _size: u32 = 2;
+    let domain = "sym";
     let mut bytes = vec![
         qtype::ENUM_LIST as u8,
         0x00,
         0x00, 0x00, 0x00, 0x02, // Big-endian size
     ];
+    
+    bytes.extend_from_slice(domain.as_bytes());
+    bytes.push(0x00); // Null terminator
     
     // Big-endian i32 values
     bytes.extend_from_slice(&[

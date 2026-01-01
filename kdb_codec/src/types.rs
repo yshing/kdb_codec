@@ -123,6 +123,9 @@ pub(crate) struct k0 {
     pub(crate) attribute: i8,
     /// Underlying value.
     pub(crate) value: k0_inner,
+    /// Domain name for enumerated types (types -20 to -76 for atoms, 20 to 76 for lists).
+    /// This is the symbol name of the enumeration domain.
+    pub(crate) enum_domain: Option<String>,
 }
 
 //%% K %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
@@ -335,6 +338,17 @@ impl K {
             qtype: qtype,
             attribute: attribute,
             value: inner,
+            enum_domain: None,
+        }))
+    }
+
+    /// Constructor for `K` with enum domain.
+    pub(crate) fn new_with_domain(qtype: i8, attribute: i8, inner: k0_inner, domain: Option<String>) -> Self {
+        K(Box::new(k0 {
+            qtype: qtype,
+            attribute: attribute,
+            value: inner,
+            enum_domain: domain,
         }))
     }
 
