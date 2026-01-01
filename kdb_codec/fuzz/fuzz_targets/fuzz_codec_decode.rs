@@ -8,6 +8,7 @@
 use libfuzzer_sys::fuzz_target;
 use bytes::BytesMut;
 use kdb_codec::codec::{KdbCodec, ValidationMode, CompressionMode};
+use kdb_codec::{MAX_LIST_SIZE, MAX_RECURSION_DEPTH};
 use tokio_util::codec::Decoder;
 
 fuzz_target!(|data: &[u8]| {
@@ -21,7 +22,9 @@ fuzz_target!(|data: &[u8]| {
         let mut codec = KdbCodec::with_options(
             false,
             CompressionMode::Auto,
-            validation
+            validation,
+            MAX_LIST_SIZE,
+            MAX_RECURSION_DEPTH,
         );
         
         let mut buffer = BytesMut::from(data);

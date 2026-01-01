@@ -818,6 +818,13 @@ pub fn decompress_sync(
                     decompressed.len()
                 )));
             }
+            if s >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write index {} exceeds buffer size {}",
+                    s,
+                    decompressed.len()
+                )));
+            }
             decompressed[s] = decompressed[r];
             s += 1;
             r += 1;
@@ -825,6 +832,13 @@ pub fn decompress_sync(
                 return Err(Error::DeserializationError(format!(
                     "Invalid compressed data: back-reference {} exceeds buffer size {}",
                     r,
+                    decompressed.len()
+                )));
+            }
+            if s >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write index {} exceeds buffer size {}",
+                    s,
                     decompressed.len()
                 )));
             }
@@ -839,6 +853,15 @@ pub fn decompress_sync(
                     "Invalid compressed data: back-reference range {}..{} exceeds buffer size {}",
                     r,
                     r + n,
+                    decompressed.len()
+                )));
+            }
+            // Validate write side doesn't exceed bounds
+            if s + n > decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write range {}..{} exceeds buffer size {}",
+                    s,
+                    s + n,
                     decompressed.len()
                 )));
             }

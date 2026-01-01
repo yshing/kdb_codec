@@ -13,6 +13,7 @@ fn test_reject_oversized_message_header() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
@@ -25,19 +26,8 @@ fn test_reject_oversized_message_header() {
         0xFF, 0xFF, 0xFF, 0xFF, // length: 4,294,967,295 bytes (4GB)
     ]);
 
-    // This should work without crashing, but currently it will try to allocate 4GB
-    // After fix, this should return an error
     let result = codec.decode(&mut buffer);
-
-    // Current behavior: will try to reserve 4GB and likely fail or hang
-    // Expected behavior after fix: should return error immediately
-    println!("Result: {:?}", result);
-
-    // For now, just verify it doesn't crash
-    // After implementing the fix, this assertion should pass:
-    // assert!(result.is_err());
-    // let err_msg = result.unwrap_err().to_string();
-    // assert!(err_msg.contains("exceeds maximum") || err_msg.contains("too large"));
+    assert!(result.is_err(), "should reject oversized message header");
 }
 
 #[test]
@@ -46,6 +36,7 @@ fn test_reject_message_size_2gb() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
@@ -59,9 +50,7 @@ fn test_reject_message_size_2gb() {
     ]);
 
     let result = codec.decode(&mut buffer);
-    println!("2GB message result: {:?}", result);
-
-    // Expected after fix: error about message being too large
+    assert!(result.is_err(), "should reject oversized message header");
 }
 
 #[test]
@@ -70,6 +59,7 @@ fn test_reject_message_size_below_header_size() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
@@ -83,9 +73,7 @@ fn test_reject_message_size_below_header_size() {
     ]);
 
     let result = codec.decode(&mut buffer);
-    println!("Undersized message result: {:?}", result);
-
-    // Expected after fix: error about invalid message size
+    assert!(result.is_err(), "should reject message smaller than header");
 }
 
 #[test]
@@ -94,11 +82,12 @@ fn test_accept_reasonable_message_size() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
-    // Create header with reasonable size (1MB)
-    let message_size = 1024 * 1024; // 1MB
+    // Create header with reasonable size (1KB) to avoid large allocations in tests
+    let message_size = 1024;
     buffer.extend_from_slice(&[
         0x01, // encoding: little endian
         0x01, // message_type: sync
@@ -120,11 +109,12 @@ fn test_maximum_message_size_boundary() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
-    // Test at exactly 100MB (recommended max)
-    let max_size = 100 * 1024 * 1024;
+    // Test at exactly the configured maximum (1KB)
+    let max_size = 1024;
     buffer.extend_from_slice(&[
         0x01, // encoding: little endian
         0x01, // message_type: sync
@@ -134,10 +124,7 @@ fn test_maximum_message_size_boundary() {
     buffer.extend_from_slice(&(max_size as u32).to_le_bytes());
 
     let result = codec.decode(&mut buffer);
-    println!("100MB message result: {:?}", result);
-
-    // After fix: should accept at boundary
-    // Currently: will try to allocate 100MB
+    assert!(result.is_ok(), "should accept at boundary");
 }
 
 #[test]
@@ -146,6 +133,7 @@ fn test_zero_message_size() {
         .is_local(false)
         .compression_mode(CompressionMode::Never)
         .validation_mode(ValidationMode::Strict)
+        .max_message_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
@@ -159,7 +147,5 @@ fn test_zero_message_size() {
     ]);
 
     let result = codec.decode(&mut buffer);
-    println!("Zero size message result: {:?}", result);
-
-    // Expected after fix: error about invalid size
+    assert!(result.is_err(), "should reject zero-length message");
 }

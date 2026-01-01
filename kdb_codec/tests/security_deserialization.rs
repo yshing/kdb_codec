@@ -6,81 +6,63 @@ use kdb_codec::*;
 
 #[test]
 fn test_large_list_allocation_i64() {
-    // Test with extremely large list size that would overflow
-    let mut bytes = vec![
+    // Ensure list-size limits reject oversized lists without allocating.
+    let size = (MAX_LIST_SIZE as u32) + 1;
+    let bytes = vec![
         qtype::LONG_LIST as u8, // Type: long list
         0x00,                   // Attribute: none
-        0xFF,
-        0xFF,
-        0xFF,
-        0xFF, // Size: 4,294,967,295 elements
+        size as u8,
+        (size >> 8) as u8,
+        (size >> 16) as u8,
+        (size >> 24) as u8, // Size: MAX_LIST_SIZE + 1
     ];
 
-    // Would need 4,294,967,295 * 8 = 34,359,738,360 bytes (34GB)
-    // Add minimal data to avoid immediate panic
-    bytes.extend_from_slice(&[0x00; 32]);
-
-    println!("Testing large i64 list allocation...");
-    let result = std::panic::catch_unwind(|| {
-        let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-    });
-
-    // Currently: will try to allocate 34GB and likely panic/OOM
-    // After fix: should return Err about excessive list size
-    println!("Large i64 list result: {:?}", result.is_err());
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject oversized list");
+    assert!(
+        matches!(err, Error::ListTooLarge { .. }),
+        "expected ListTooLarge, got: {err:?}"
+    );
 }
 
 #[test]
 fn test_large_list_allocation_guid() {
-    // Test GUID list with overflow potential
-    let mut bytes = vec![
+    // Ensure list-size limits reject oversized lists without allocating.
+    let size = (MAX_LIST_SIZE as u32) + 1;
+    let bytes = vec![
         qtype::GUID_LIST as u8, // Type: GUID list
         0x00,                   // Attribute: none
-        0xFF,
-        0xFF,
-        0xFF,
-        0x0F, // Size: 268,435,455 elements
+        size as u8,
+        (size >> 8) as u8,
+        (size >> 16) as u8,
+        (size >> 24) as u8, // Size: MAX_LIST_SIZE + 1
     ];
 
-    // Would need 268,435,455 * 16 = 4,294,967,280 bytes (4GB)
-    bytes.extend_from_slice(&[0x00; 64]);
-
-    println!("Testing large GUID list allocation...");
-    let result = std::panic::catch_unwind(|| {
-        let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-    });
-
-    println!("Large GUID list result: {:?}", result.is_err());
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject oversized list");
+    assert!(
+        matches!(err, Error::ListTooLarge { .. }),
+        "expected ListTooLarge, got: {err:?}"
+    );
 }
 
 #[test]
 fn test_integer_overflow_in_size_calculation() {
-    // Test with size that causes overflow in multiplication
-    // For i64 list: size * 8 would overflow usize on 32-bit systems
-    let mut bytes = vec![
-        qtype::LONG_LIST as u8, // Type: long list
-        0x00,                   // Attribute: none
+    // The deserializer reads list lengths as u32 and checks MAX_LIST_SIZE before
+    // any byte-count multiplication. This test ensures we still fail fast.
+    let size = (MAX_LIST_SIZE as u32) + 1;
+    let bytes = vec![
+        qtype::LONG_LIST as u8,
         0x00,
-        0x00,
-        0x00,
-        0x20, // Size: 536,870,912 elements
+        size as u8,
+        (size >> 8) as u8,
+        (size >> 16) as u8,
+        (size >> 24) as u8,
     ];
 
-    // 536,870,912 * 8 = 4,294,967,296 bytes
-    // This overflows 32-bit usize but not 64-bit
-    bytes.extend_from_slice(&[0x00; 64]);
-
-    println!("Testing integer overflow in size calculation...");
-    let result = std::panic::catch_unwind(|| {
-        let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-    });
-
-    // After fix: should use checked_mul and return error
-    println!("Integer overflow result: {:?}", result.is_err());
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject oversized list");
+    assert!(matches!(err, Error::ListTooLarge { .. }));
 }
 
 #[test]
-#[should_panic]
 fn test_symbol_without_null_terminator() {
     // Test symbol deserialization without null terminator
     let bytes = vec![
@@ -92,14 +74,11 @@ fn test_symbol_without_null_terminator() {
         b'o', // "hello" without null terminator
     ];
 
-    // Currently panics: unwrap() on None when searching for null byte
-    let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-
-    // After fix: should return Err about missing null terminator
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should require null terminator");
+    assert!(matches!(err, Error::MissingNullTerminator));
 }
 
 #[test]
-#[should_panic]
 fn test_symbol_with_invalid_utf8() {
     // Test symbol with invalid UTF-8 sequence
     let bytes = vec![
@@ -110,14 +89,11 @@ fn test_symbol_with_invalid_utf8() {
         0x00, // Null terminator
     ];
 
-    // Currently panics: unwrap() on String::from_utf8 error
-    let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-
-    // After fix: should return Err about invalid UTF-8
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject invalid UTF-8");
+    assert!(matches!(err, Error::InvalidUtf8));
 }
 
 #[test]
-#[should_panic]
 fn test_string_with_invalid_utf8() {
     // Test string (char list) with invalid UTF-8
     let bytes = vec![
@@ -134,10 +110,8 @@ fn test_string_with_invalid_utf8() {
         0xFB, // Invalid UTF-8 sequence
     ];
 
-    // Currently panics on from_utf8().unwrap()
-    let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-
-    // After fix: should return Err about invalid UTF-8
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject invalid UTF-8");
+    assert!(matches!(err, Error::InvalidUtf8));
 }
 
 #[test]
@@ -158,14 +132,8 @@ fn test_symbol_list_with_invalid_utf8() {
         0x00, // Second symbol: invalid UTF-8
     ];
 
-    println!("Testing symbol list with invalid UTF-8...");
-    let result = std::panic::catch_unwind(|| {
-        let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-    });
-
-    // Currently panics
-    // After fix: should return Err
-    assert!(result.is_err(), "Should reject invalid UTF-8");
+    let err = K::q_ipc_decode(&bytes, 1).expect_err("should reject invalid UTF-8");
+    assert!(matches!(err, Error::InvalidUtf8));
 }
 
 #[test]
@@ -192,13 +160,9 @@ fn test_deeply_nested_compound_list() {
             bytes.push(qtype::INT_ATOM as u8);
             bytes.extend_from_slice(&[0x2A, 0x00, 0x00, 0x00]); // Value: 42
 
-            println!("Testing deeply nested lists (depth: {})...", nesting_depth);
             match K::q_ipc_decode(&bytes, 1) {
                 Ok(_) => panic!("Should have returned MaxDepthExceeded error"),
-                Err(e) => {
-                    println!("Got expected error: {}", e);
-                    assert!(e.to_string().contains("depth"));
-                }
+                Err(e) => assert!(matches!(e, Error::MaxDepthExceeded { .. })),
             }
         })
         .unwrap();
@@ -231,10 +195,7 @@ fn test_extremely_deep_nesting() {
             );
             match K::q_ipc_decode(&bytes, 1) {
                 Ok(_) => panic!("Should have returned MaxDepthExceeded error"),
-                Err(e) => {
-                    println!("Got expected error: {}", e);
-                    assert!(e.to_string().contains("depth"));
-                }
+                Err(e) => assert!(matches!(e, Error::MaxDepthExceeded { .. })),
             }
         })
         .unwrap();
@@ -270,13 +231,9 @@ fn test_nested_table_in_list() {
             bytes.push(0x00);
             bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
 
-            println!("Testing nested table structure...");
             match K::q_ipc_decode(&bytes, 1) {
                 Ok(_) => panic!("Should have returned MaxDepthExceeded error"),
-                Err(e) => {
-                    println!("Got expected error: {}", e);
-                    assert!(e.to_string().contains("depth"));
-                }
+                Err(e) => assert!(matches!(e, Error::MaxDepthExceeded { .. })),
             }
         })
         .unwrap();

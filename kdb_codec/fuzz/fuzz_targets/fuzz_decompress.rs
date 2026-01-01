@@ -16,9 +16,6 @@ fuzz_target!(|data: &[u8]| {
     
     // Test with both encodings
     for encoding in [0u8, 1u8] {
-        // Catch panics - we want to find these!
-        let _ = std::panic::catch_unwind(|| {
-            let _result = decompress_sync(data.to_vec(), encoding);
-        });
+        let _ = decompress_sync(data.to_vec(), encoding, None);
     }
 });

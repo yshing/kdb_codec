@@ -3,9 +3,9 @@
 //! Tests for invalid message headers, compressed flags, and message types
 
 use bytes::BytesMut;
-use kdb_codec::codec::{CompressionMode, KdbCodec, MessageHeader, ValidationMode};
+use kdb_codec::codec::{CompressionMode, KdbCodec, KdbMessage, MessageHeader, ValidationMode};
 use kdb_codec::k;
-use tokio_util::codec::Decoder;
+use tokio_util::codec::{Decoder, Encoder};
 
 #[test]
 fn test_strict_mode_rejects_invalid_compressed_flag() {
@@ -215,44 +215,48 @@ fn test_valid_message_types() {
 
 #[test]
 fn test_valid_compressed_flags() {
-    // Test both valid compressed flag values
-    for compressed in &[0u8, 1u8] {
+    // Test both valid compressed flag values using real encoded messages.
+
+    // Uncompressed: small message below compression threshold.
+    {
         let mut codec = KdbCodec::builder()
             .is_local(false)
             .compression_mode(CompressionMode::Never)
             .validation_mode(ValidationMode::Strict)
             .build();
 
-        let small_int = k!(int: 42);
-        let payload_bytes = if *compressed == 1 {
-            // For compressed flag, we need proper compressed format
-            // For simplicity, just test uncompressed
-            if *compressed == 1 {
-                continue; // Skip compressed test in this simple validation
-            }
-            small_int.q_ipc_encode()
-        } else {
-            small_int.q_ipc_encode()
-        };
-
-        let total_length = (8 + payload_bytes.len()) as u32;
-
+        let message = KdbMessage::new(1, k!(int: 42));
         let mut buffer = BytesMut::new();
-        buffer.extend_from_slice(&[
-            0x01,        // encoding
-            0x01,        // message_type
-            *compressed, // compressed: 0 or 1
-            0x00,        // reserved
-        ]);
-        buffer.extend_from_slice(&total_length.to_le_bytes());
-        buffer.extend_from_slice(&payload_bytes);
+        codec.encode(message, &mut buffer).unwrap();
+
+        let header = MessageHeader::from_bytes(&buffer[..8]).unwrap();
+        assert_eq!(header.compressed, 0);
 
         let result = codec.decode(&mut buffer);
-        assert!(
-            result.is_ok(),
-            "Compressed flag {} should be valid",
-            compressed
-        );
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
+    }
+
+    // Compressed: use a payload above the compression threshold.
+    {
+        let mut encoder = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Always)
+            .validation_mode(ValidationMode::Strict)
+            .max_decompressed_size(8 * 1024 * 1024)
+            .build();
+
+        let large_list = k!(long: vec![1; 3000]);
+        let message = KdbMessage::new(1, large_list);
+        let mut buffer = BytesMut::new();
+        encoder.encode(message, &mut buffer).unwrap();
+
+        let header = MessageHeader::from_bytes(&buffer[..8]).unwrap();
+        assert_eq!(header.compressed, 1);
+
+        let result = encoder.decode(&mut buffer);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
     }
 }
 

@@ -82,8 +82,8 @@ cargo +nightly fuzz run fuzz_decompress
 
 This tests the entire codec decoding pipeline:
 
-# From kdb_codec directory
 ```bash
+# From kdb_codec directory
 cargo +nightly fuzz run fuzz_codec_decode
 ```
 

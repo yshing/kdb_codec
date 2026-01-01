@@ -14,6 +14,7 @@ fn test_malformed_compressed_message() {
         .is_local(false)
         .compression_mode(CompressionMode::Auto)
         .validation_mode(ValidationMode::Strict)
+        .max_decompressed_size(1024)
         .build();
     let mut buffer = BytesMut::new();
 
@@ -35,11 +36,8 @@ fn test_malformed_compressed_message() {
     // Pad to 32 bytes total
     buffer.extend_from_slice(&[0x00; 16]);
 
-    println!("Testing malformed compressed message...");
     let result = codec.decode(&mut buffer);
-
-    // Should handle gracefully (currently may panic)
-    println!("Malformed compressed result: {:?}", result.is_err());
+    assert!(result.is_err(), "malformed compressed message should be rejected");
 }
 
 #[test]
@@ -62,7 +60,7 @@ fn test_valid_compression_then_valid_decompression() {
 
     // Check it was compressed
     let header = codec::MessageHeader::from_bytes(&buffer[..8]).unwrap();
-    println!("Message compressed: {}", header.compressed);
+    assert_eq!(header.compressed, 1, "message should be compressed");
 
     // Decode
     let decode_result = codec.decode(&mut buffer);
@@ -161,7 +159,6 @@ fn test_large_but_valid_message() {
     let result = codec.encode(message, &mut buffer);
 
     assert!(result.is_ok(), "Should encode large valid message");
-    println!("Encoded large message: {} bytes", buffer.len());
 
     // Should be able to decode it back
     let decode_result = codec.decode(&mut buffer);
@@ -185,14 +182,7 @@ fn test_list_with_million_elements() {
     // Test list with 1 million small elements (reasonable size)
     let bytes = create_int_list_bytes(1_000_000);
 
-    println!("Testing 1M element list deserialization...");
-    let result = std::panic::catch_unwind(|| {
-        let _k = K::q_ipc_decode(&bytes, 1).unwrap();
-    });
-
-    // Should work with 1M elements (4MB of data)
-    // But if MAX_LIST_SIZE is set too low, this would fail
-    println!("1M element list result: {:?}", result.is_ok());
+    let _k = K::q_ipc_decode(&bytes, 1).expect("1M element list should decode");
 }
 
 #[test]
