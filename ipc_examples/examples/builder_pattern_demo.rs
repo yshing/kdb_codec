@@ -62,8 +62,12 @@ fn main() -> Result<()> {
     println!("   Traditional: KdbCodec::new(false)");
     let _trad = KdbCodec::new(false);
 
-    println!("   With options: KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict)");
-    let _opts = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
+    println!("   With builder: KdbCodec::builder().is_local(false).compression_mode(CompressionMode::Always).validation_mode(ValidationMode::Strict).build()");
+    let _opts = KdbCodec::builder()
+        .is_local(false)
+        .compression_mode(CompressionMode::Always)
+        .validation_mode(ValidationMode::Strict)
+        .build();
 
     println!("   Builder: KdbCodec::builder()");
     println!("              .is_local(false)");

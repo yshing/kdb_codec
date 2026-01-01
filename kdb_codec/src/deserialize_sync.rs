@@ -100,10 +100,10 @@ macro_rules! build_element {
 
 /// Read given bytes with a given cursor and build a basic type list of the specified type.
 macro_rules! build_list {
-    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i16) => {{
-        let (attribute, size, cursor) = get_attribute_and_size($bytes, $cursor, $encode)?;
-        let byte_count = size.checked_mul(2)
-            .ok_or(Error::SizeOverflow)?;
+    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i16, $max_list_size:expr) => {{
+        let (attribute, size, cursor) =
+            get_attribute_and_size($bytes, $cursor, $encode, $max_list_size)?;
+        let byte_count = size.checked_mul(2).ok_or(Error::SizeOverflow)?;
         if cursor + byte_count > $bytes.len() {
             return Err(Error::InsufficientData {
                 needed: byte_count,
@@ -123,10 +123,10 @@ macro_rules! build_list {
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
-    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i32) => {{
-        let (attribute, size, cursor) = get_attribute_and_size($bytes, $cursor, $encode)?;
-        let byte_count = size.checked_mul(4)
-            .ok_or(Error::SizeOverflow)?;
+    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i32, $max_list_size:expr) => {{
+        let (attribute, size, cursor) =
+            get_attribute_and_size($bytes, $cursor, $encode, $max_list_size)?;
+        let byte_count = size.checked_mul(4).ok_or(Error::SizeOverflow)?;
         if cursor + byte_count > $bytes.len() {
             return Err(Error::InsufficientData {
                 needed: byte_count,
@@ -146,10 +146,10 @@ macro_rules! build_list {
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
-    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i64) => {{
-        let (attribute, size, cursor) = get_attribute_and_size($bytes, $cursor, $encode)?;
-        let byte_count = size.checked_mul(8)
-            .ok_or(Error::SizeOverflow)?;
+    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, i64, $max_list_size:expr) => {{
+        let (attribute, size, cursor) =
+            get_attribute_and_size($bytes, $cursor, $encode, $max_list_size)?;
+        let byte_count = size.checked_mul(8).ok_or(Error::SizeOverflow)?;
         if cursor + byte_count > $bytes.len() {
             return Err(Error::InsufficientData {
                 needed: byte_count,
@@ -169,10 +169,10 @@ macro_rules! build_list {
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
-    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, f32) => {{
-        let (attribute, size, cursor) = get_attribute_and_size($bytes, $cursor, $encode)?;
-        let byte_count = size.checked_mul(4)
-            .ok_or(Error::SizeOverflow)?;
+    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, f32, $max_list_size:expr) => {{
+        let (attribute, size, cursor) =
+            get_attribute_and_size($bytes, $cursor, $encode, $max_list_size)?;
+        let byte_count = size.checked_mul(4).ok_or(Error::SizeOverflow)?;
         if cursor + byte_count > $bytes.len() {
             return Err(Error::InsufficientData {
                 needed: byte_count,
@@ -192,10 +192,10 @@ macro_rules! build_list {
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
-    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, f64) => {{
-        let (attribute, size, cursor) = get_attribute_and_size($bytes, $cursor, $encode)?;
-        let byte_count = size.checked_mul(8)
-            .ok_or(Error::SizeOverflow)?;
+    ($bytes:expr, $cursor:expr, $encode:expr, $qtype:expr, f64, $max_list_size:expr) => {{
+        let (attribute, size, cursor) =
+            get_attribute_and_size($bytes, $cursor, $encode, $max_list_size)?;
+        let byte_count = size.checked_mul(8).ok_or(Error::SizeOverflow)?;
         if cursor + byte_count > $bytes.len() {
             return Err(Error::InsufficientData {
                 needed: byte_count,
@@ -224,27 +224,43 @@ macro_rules! build_list {
 impl K {
     /// Synchronously decode q object from bytes in a manner of q function `-8!`.
     /// Returns Result to handle errors gracefully instead of panicking.
+    /// Uses default security limits for list size and recursion depth.
     pub fn q_ipc_decode(bytes: &[u8], encode: u8) -> Result<K> {
-        q_ipc_decode_sync(bytes, encode)
+        q_ipc_decode_sync(
+            bytes,
+            encode,
+            crate::MAX_LIST_SIZE,
+            crate::MAX_RECURSION_DEPTH,
+        )
     }
 }
 
 /// Synchronously decode K object from bytes (for codec)
-pub(crate) fn q_ipc_decode_sync(bytes: &[u8], encode: u8) -> Result<K> {
-    deserialize_bytes_sync(bytes, 0, encode, 0).map(|(k, _)| k)
+pub(crate) fn q_ipc_decode_sync(
+    bytes: &[u8],
+    encode: u8,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<K> {
+    deserialize_bytes_sync(bytes, 0, encode, 0, max_list_size, max_recursion_depth).map(|(k, _)| k)
 }
 
-fn deserialize_bytes_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize) -> Result<(K, usize)> {
-    use crate::MAX_RECURSION_DEPTH;
-    
+fn deserialize_bytes_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
     // Check recursion depth
-    if depth > MAX_RECURSION_DEPTH {
+    if depth > max_recursion_depth {
         return Err(Error::MaxDepthExceeded {
             depth,
-            max: MAX_RECURSION_DEPTH,
+            max: max_recursion_depth,
         });
     }
-    
+
     // Type of q object is stored in a byte
     if cursor >= bytes.len() {
         return Err(Error::InsufficientData {
@@ -280,29 +296,141 @@ fn deserialize_bytes_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize)
         qtype::MINUTE_ATOM => build_element!(bytes, cursor + 1, encode, qtype::MINUTE_ATOM, i32),
         qtype::SECOND_ATOM => build_element!(bytes, cursor + 1, encode, qtype::SECOND_ATOM, i32),
         qtype::TIME_ATOM => build_element!(bytes, cursor + 1, encode, qtype::TIME_ATOM, i32),
-        qtype::COMPOUND_LIST => deserialize_compound_list_sync(bytes, cursor + 1, encode, depth),
-        qtype::BOOL_LIST => deserialize_bool_list(bytes, cursor + 1, encode),
-        qtype::GUID_LIST => deserialize_guid_list_sync(bytes, cursor + 1, encode),
-        qtype::BYTE_LIST => deserialize_byte_list(bytes, cursor + 1, encode),
-        qtype::SHORT_LIST => build_list!(bytes, cursor + 1, encode, qtype::SHORT_LIST, i16),
-        qtype::INT_LIST => build_list!(bytes, cursor + 1, encode, qtype::INT_LIST, i32),
-        qtype::LONG_LIST => build_list!(bytes, cursor + 1, encode, qtype::LONG_LIST, i64),
-        qtype::REAL_LIST => build_list!(bytes, cursor + 1, encode, qtype::REAL_LIST, f32),
-        qtype::FLOAT_LIST => build_list!(bytes, cursor + 1, encode, qtype::FLOAT_LIST, f64),
-        qtype::STRING => deserialize_string(bytes, cursor + 1, encode),
-        qtype::SYMBOL_LIST => deserialize_symbol_list_sync(bytes, cursor + 1, encode),
-        qtype::TIMESTAMP_LIST => build_list!(bytes, cursor + 1, encode, qtype::TIMESTAMP_LIST, i64),
-        qtype::MONTH_LIST => build_list!(bytes, cursor + 1, encode, qtype::MONTH_LIST, i32),
-        qtype::DATE_LIST => build_list!(bytes, cursor + 1, encode, qtype::DATE_LIST, i32),
-        qtype::DATETIME_LIST => build_list!(bytes, cursor + 1, encode, qtype::DATETIME_LIST, f64),
-        qtype::TIMESPAN_LIST => build_list!(bytes, cursor + 1, encode, qtype::TIMESPAN_LIST, i64),
-        qtype::MINUTE_LIST => build_list!(bytes, cursor + 1, encode, qtype::MINUTE_LIST, i32),
-        qtype::SECOND_LIST => build_list!(bytes, cursor + 1, encode, qtype::SECOND_LIST, i32),
-        qtype::TIME_LIST => build_list!(bytes, cursor + 1, encode, qtype::TIME_LIST, i32),
-        qtype::TABLE => deserialize_table_sync(bytes, cursor + 1, encode, depth),
-        qtype::DICTIONARY | qtype::SORTED_DICTIONARY => {
-            deserialize_dictionary_sync(bytes, cursor + 1, encode, depth)
+        qtype::COMPOUND_LIST => deserialize_compound_list_sync(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+        ),
+        qtype::BOOL_LIST => deserialize_bool_list(bytes, cursor + 1, encode, max_list_size),
+        qtype::GUID_LIST => deserialize_guid_list_sync(bytes, cursor + 1, encode, max_list_size),
+        qtype::BYTE_LIST => deserialize_byte_list(bytes, cursor + 1, encode, max_list_size),
+        qtype::SHORT_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::SHORT_LIST,
+            i16,
+            max_list_size
+        ),
+        qtype::INT_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::INT_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::LONG_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::LONG_LIST,
+            i64,
+            max_list_size
+        ),
+        qtype::REAL_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::REAL_LIST,
+            f32,
+            max_list_size
+        ),
+        qtype::FLOAT_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::FLOAT_LIST,
+            f64,
+            max_list_size
+        ),
+        qtype::STRING => deserialize_string(bytes, cursor + 1, encode, max_list_size),
+        qtype::SYMBOL_LIST => {
+            deserialize_symbol_list_sync(bytes, cursor + 1, encode, max_list_size)
         }
+        qtype::TIMESTAMP_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::TIMESTAMP_LIST,
+            i64,
+            max_list_size
+        ),
+        qtype::MONTH_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::MONTH_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::DATE_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::DATE_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::DATETIME_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::DATETIME_LIST,
+            f64,
+            max_list_size
+        ),
+        qtype::TIMESPAN_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::TIMESPAN_LIST,
+            i64,
+            max_list_size
+        ),
+        qtype::MINUTE_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::MINUTE_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::SECOND_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::SECOND_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::TIME_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::TIME_LIST,
+            i32,
+            max_list_size
+        ),
+        qtype::TABLE => deserialize_table_sync(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+        ),
+        qtype::DICTIONARY | qtype::SORTED_DICTIONARY => deserialize_dictionary_sync(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+        ),
         qtype::NULL => deserialize_null(bytes, cursor + 1, encode),
         qtype::ERROR => deserialize_error(bytes, cursor + 1, encode),
         _ => Err(Error::InvalidType(qtype)),
@@ -362,14 +490,14 @@ fn deserialize_symbol(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> 
             available: 0,
         });
     }
-    
+
     let null_location = bytes
         .split_at(cursor)
         .1
         .iter()
         .position(|b| *b == 0x00)
         .ok_or(Error::MissingNullTerminator)?;
-    
+
     let symbol_str = String::from_utf8(bytes[cursor..cursor + null_location].to_vec())
         .map_err(|_| Error::InvalidUtf8)?;
     let k = K::new_symbol(symbol_str);
@@ -377,9 +505,12 @@ fn deserialize_symbol(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> 
 }
 
 /// Extract attribute and list length and then proceed the cursor.
-fn get_attribute_and_size(bytes: &[u8], cursor: usize, encode: u8) -> Result<(i8, usize, usize)> {
-    use crate::MAX_LIST_SIZE;
-    
+fn get_attribute_and_size(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(i8, usize, usize)> {
     // Ensure we have enough bytes for attribute (1) + size (4)
     if cursor + 5 > bytes.len() {
         return Err(Error::InsufficientData {
@@ -392,22 +523,27 @@ fn get_attribute_and_size(bytes: &[u8], cursor: usize, encode: u8) -> Result<(i8
         0 => u32::from_be_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
         _ => u32::from_le_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
     };
-    
+
     let size = size_u32 as usize;
-    
+
     // Validate size is reasonable
-    if size > MAX_LIST_SIZE {
+    if size > max_list_size {
         return Err(Error::ListTooLarge {
             size,
-            max: MAX_LIST_SIZE,
+            max: max_list_size,
         });
     }
-    
+
     Ok((bytes[cursor] as i8, size, cursor + 5))
 }
 
-fn deserialize_bool_list(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
-    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode)?;
+fn deserialize_bool_list(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
     if cursor + size > bytes.len() {
         return Err(Error::InsufficientData {
             needed: size,
@@ -425,10 +561,14 @@ fn deserialize_bool_list(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, 
     ))
 }
 
-fn deserialize_guid_list_sync(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
-    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode)?;
-    let byte_count = size.checked_mul(16)
-        .ok_or(Error::SizeOverflow)?;
+fn deserialize_guid_list_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
+    let byte_count = size.checked_mul(16).ok_or(Error::SizeOverflow)?;
     if cursor + byte_count > bytes.len() {
         return Err(Error::InsufficientData {
             needed: byte_count,
@@ -442,8 +582,13 @@ fn deserialize_guid_list_sync(bytes: &[u8], cursor: usize, encode: u8) -> Result
     Ok((K::new_guid_list(list, attribute), cursor + byte_count))
 }
 
-fn deserialize_byte_list(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
-    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode)?;
+fn deserialize_byte_list(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
     if cursor + size > bytes.len() {
         return Err(Error::InsufficientData {
             needed: size,
@@ -461,24 +606,35 @@ fn deserialize_byte_list(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, 
     ))
 }
 
-fn deserialize_string(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
-    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode)?;
+fn deserialize_string(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    let (attribute, size, cursor) = get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
     if cursor + size > bytes.len() {
         return Err(Error::InsufficientData {
             needed: size,
             available: bytes.len().saturating_sub(cursor),
         });
     }
-    let string = String::from_utf8(bytes[cursor..cursor + size].to_vec())
-        .map_err(|_| Error::InvalidUtf8)?;
+    let string =
+        String::from_utf8(bytes[cursor..cursor + size].to_vec()).map_err(|_| Error::InvalidUtf8)?;
     Ok((
         K::new(qtype::STRING, attribute, k0_inner::symbol(string)),
         cursor + size,
     ))
 }
 
-fn deserialize_symbol_list_sync(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
-    let (attribute, size, mut cursor) = get_attribute_and_size(bytes, cursor, encode)?;
+fn deserialize_symbol_list_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    let (attribute, size, mut cursor) =
+        get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
     let mut list = Vec::with_capacity(size);
     for _ in 0..size {
         if cursor >= bytes.len() {
@@ -501,20 +657,33 @@ fn deserialize_symbol_list_sync(bytes: &[u8], cursor: usize, encode: u8) -> Resu
     Ok((K::new_symbol_list(list, attribute), cursor))
 }
 
-fn deserialize_compound_list_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize) -> Result<(K, usize)> {
-    use crate::MAX_RECURSION_DEPTH;
-    
-    if depth > MAX_RECURSION_DEPTH {
+fn deserialize_compound_list_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
+    if depth > max_recursion_depth {
         return Err(Error::MaxDepthExceeded {
             depth,
-            max: MAX_RECURSION_DEPTH,
+            max: max_recursion_depth,
         });
     }
-    
-    let (attribute, size, mut cursor) = get_attribute_and_size(bytes, cursor, encode)?;
+
+    let (attribute, size, mut cursor) =
+        get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
     let mut list = Vec::with_capacity(size);
     for _ in 0..size {
-        let (k, new_cursor) = deserialize_bytes_sync(bytes, cursor, encode, depth + 1)?;
+        let (k, new_cursor) = deserialize_bytes_sync(
+            bytes,
+            cursor,
+            encode,
+            depth + 1,
+            max_list_size,
+            max_recursion_depth,
+        )?;
         list.push(k);
         cursor = new_cursor;
     }
@@ -523,16 +692,21 @@ fn deserialize_compound_list_sync(bytes: &[u8], cursor: usize, encode: u8, depth
     Ok((k, cursor))
 }
 
-fn deserialize_table_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize) -> Result<(K, usize)> {
-    use crate::MAX_RECURSION_DEPTH;
-    
-    if depth > MAX_RECURSION_DEPTH {
+fn deserialize_table_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
+    if depth > max_recursion_depth {
         return Err(Error::MaxDepthExceeded {
             depth,
-            max: MAX_RECURSION_DEPTH,
+            max: max_recursion_depth,
         });
     }
-    
+
     // Table format: [attribute (1 byte)] [dictionary_qtype (1 byte)] [dictionary_data]
     // Ensure we have at least 2 bytes
     if cursor + 2 > bytes.len() {
@@ -541,7 +715,7 @@ fn deserialize_table_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize)
             available: bytes.len().saturating_sub(cursor),
         });
     }
-    
+
     // Skip attribute byte
     let _attribute = bytes[cursor] as i8;
     // Skip dictionary qtype byte (should be 99 or 127)
@@ -549,27 +723,53 @@ fn deserialize_table_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize)
     let cursor = cursor + 2;
 
     // Deserialize the dictionary (keys and values)
-    let (dictionary, cursor) = deserialize_dictionary_sync(bytes, cursor, encode, depth + 1)?;
+    let (dictionary, cursor) = deserialize_dictionary_sync(
+        bytes,
+        cursor,
+        encode,
+        depth + 1,
+        max_list_size,
+        max_recursion_depth,
+    )?;
     Ok((
         K::new(qtype::TABLE, qattribute::NONE, k0_inner::table(dictionary)),
         cursor,
     ))
 }
 
-fn deserialize_dictionary_sync(bytes: &[u8], cursor: usize, encode: u8, depth: usize) -> Result<(K, usize)> {
-    use crate::MAX_RECURSION_DEPTH;
-    
-    if depth > MAX_RECURSION_DEPTH {
+fn deserialize_dictionary_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
+    if depth > max_recursion_depth {
         return Err(Error::MaxDepthExceeded {
             depth,
-            max: MAX_RECURSION_DEPTH,
+            max: max_recursion_depth,
         });
     }
-    
+
     // Deserialize keys
-    let (keys, cursor) = deserialize_bytes_sync(bytes, cursor, encode, depth + 1)?;
+    let (keys, cursor) = deserialize_bytes_sync(
+        bytes,
+        cursor,
+        encode,
+        depth + 1,
+        max_list_size,
+        max_recursion_depth,
+    )?;
     // Deserialize values
-    let (values, cursor) = deserialize_bytes_sync(bytes, cursor, encode, depth + 1)?;
+    let (values, cursor) = deserialize_bytes_sync(
+        bytes,
+        cursor,
+        encode,
+        depth + 1,
+        max_list_size,
+        max_recursion_depth,
+    )?;
     // Build dictionary - new_dictionary handles sorted and keyed tables internally
     let dictionary = K::new_dictionary(keys, values)
         .map_err(|e| Error::DeserializationError(format!("Failed to build dictionary: {}", e)))?;
@@ -590,21 +790,17 @@ fn deserialize_error(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
             available: 0,
         });
     }
-    
+
     let null_location = bytes
         .split_at(cursor)
         .1
         .iter()
         .position(|b| *b == 0x00)
         .ok_or(Error::MissingNullTerminator)?;
-    
+
     let error_msg = String::from_utf8(bytes[cursor..cursor + null_location].to_vec())
         .map_err(|_| Error::InvalidUtf8)?;
-    
-    let k = K::new(
-        qtype::ERROR,
-        qattribute::NONE,
-        k0_inner::symbol(error_msg),
-    );
+
+    let k = K::new(qtype::ERROR, qattribute::NONE, k0_inner::symbol(error_msg));
     Ok((k, cursor + null_location + 1))
 }

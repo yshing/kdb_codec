@@ -309,11 +309,9 @@ impl fmt::Display for Error {
                 "maximum recursion depth exceeded: {} (max: {})",
                 depth, max
             ),
-            Self::ListTooLarge { size, max } => write!(
-                f,
-                "list size {} exceeds maximum allowed size {}",
-                size, max
-            ),
+            Self::ListTooLarge { size, max } => {
+                write!(f, "list size {} exceeds maximum allowed size {}", size, max)
+            }
             Self::SizeOverflow => write!(f, "integer overflow in size calculation"),
         }
     }
@@ -387,11 +385,9 @@ impl fmt::Debug for Error {
                 "maximum recursion depth exceeded: {} (max: {})",
                 depth, max
             ),
-            Self::ListTooLarge { size, max } => write!(
-                f,
-                "list size {} exceeds maximum allowed size {}",
-                size, max
-            ),
+            Self::ListTooLarge { size, max } => {
+                write!(f, "list size {} exceeds maximum allowed size {}", size, max)
+            }
             Self::SizeOverflow => write!(f, "integer overflow in size calculation"),
         }
     }
