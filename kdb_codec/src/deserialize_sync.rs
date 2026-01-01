@@ -421,6 +421,7 @@ fn deserialize_bytes_sync(
         qtype::MINUTE_ATOM => build_element!(bytes, cursor + 1, encode, qtype::MINUTE_ATOM, i32),
         qtype::SECOND_ATOM => build_element!(bytes, cursor + 1, encode, qtype::SECOND_ATOM, i32),
         qtype::TIME_ATOM => build_element!(bytes, cursor + 1, encode, qtype::TIME_ATOM, i32),
+        qtype::ENUM_ATOM => build_element!(bytes, cursor + 1, encode, qtype::ENUM_ATOM, i32),
         qtype::COMPOUND_LIST => deserialize_compound_list_sync(
             bytes,
             cursor + 1,
@@ -540,6 +541,14 @@ fn deserialize_bytes_sync(
             i32,
             max_list_size
         ),
+        qtype::ENUM_LIST => build_list!(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::ENUM_LIST,
+            i32,
+            max_list_size
+        ),
         qtype::TABLE => deserialize_table_sync(
             bytes,
             cursor + 1,
@@ -558,6 +567,7 @@ fn deserialize_bytes_sync(
         ),
         qtype::NULL => deserialize_null(bytes, cursor + 1, encode),
         qtype::ERROR => deserialize_error(bytes, cursor + 1, encode),
+        qtype::FOREIGN => deserialize_foreign(bytes, cursor + 1, encode, max_list_size),
         _ => Err(Error::InvalidType(qtype)),
     }
 }
@@ -959,4 +969,64 @@ fn deserialize_error(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
 
     let k = K::new(qtype::ERROR, qattribute::NONE, k0_inner::symbol(error_msg));
     Ok((k, cursor + null_location + 1))
+}
+
+fn deserialize_foreign(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    max_list_size: usize,
+) -> Result<(K, usize)> {
+    // Foreign objects are stored as: attribute (1 byte) + length (4 bytes) + payload
+    // We read the length, check bounds, and store the payload as opaque bytes
+    
+    if cursor + 5 > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 5,
+            available: bytes.len().saturating_sub(cursor),
+        });
+    }
+
+    let attribute = bytes[cursor] as i8;
+    
+    let length_bytes: [u8; 4] = bytes[cursor + 1..cursor + 5]
+        .try_into()
+        .map_err(|_| Error::DeserializationError("invalid foreign length bytes".to_string()))?;
+    
+    let length_u32 = match encode {
+        0 => u32::from_be_bytes(length_bytes),
+        _ => u32::from_le_bytes(length_bytes),
+    };
+    
+    let length = length_u32 as usize;
+    
+    // Check against max_list_size to prevent excessive allocations
+    if length > max_list_size {
+        return Err(Error::ListTooLarge {
+            size: length,
+            max: max_list_size,
+        });
+    }
+    
+    let data_cursor = cursor + 5;
+    
+    // Check we have enough bytes for the payload
+    if data_cursor + length > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: length,
+            available: bytes.len().saturating_sub(data_cursor),
+        });
+    }
+    
+    // Copy the foreign object payload as opaque bytes
+    let payload = bytes[data_cursor..data_cursor + length].to_vec();
+    
+    // Store as a byte list with FOREIGN type
+    let k = K::new(
+        qtype::FOREIGN,
+        attribute,
+        k0_inner::list(k0_list::new(payload)),
+    );
+    
+    Ok((k, data_cursor + length))
 }

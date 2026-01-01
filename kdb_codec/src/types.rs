@@ -1391,7 +1391,8 @@ impl K {
             | qtype::DATE_ATOM
             | qtype::MINUTE_ATOM
             | qtype::SECOND_ATOM
-            | qtype::TIME_ATOM => match self.0.value {
+            | qtype::TIME_ATOM
+            | qtype::ENUM_ATOM => match self.0.value {
                 k0_inner::int(int) => Ok(int),
                 _ => Err(Error::DeserializationError(
                     "inconsistent K object for INT_ATOM".to_string(),
@@ -1947,6 +1948,8 @@ impl K {
             | qtype::MINUTE_LIST
             | qtype::SECOND_LIST
             | qtype::TIME_LIST
+            | qtype::ENUM_LIST
+            | qtype::FOREIGN
             | qtype::DICTIONARY
             | qtype::SORTED_DICTIONARY => match &mut self.0.value {
                 k0_inner::list(list) => match list.G0.as_any_mut().downcast_mut::<Vec<T>>() {
@@ -1994,6 +1997,8 @@ impl K {
             | qtype::MINUTE_LIST
             | qtype::SECOND_LIST
             | qtype::TIME_LIST
+            | qtype::ENUM_LIST
+            | qtype::FOREIGN
             | qtype::DICTIONARY
             | qtype::SORTED_DICTIONARY => match &self.0.value {
                 k0_inner::list(list) => match list.G0.as_any().downcast_ref::<Vec<T>>() {
