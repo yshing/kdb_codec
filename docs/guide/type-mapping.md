@@ -54,12 +54,22 @@ All q values are represented as the `K` struct. The following table summarizes t
 
 ## Missing / not supported yet
 
-Compared to the full datatype taxonomy described in KX documentation, the following categories are currently **not** supported by the IPC encoder/decoder:
+Compared to the full datatype taxonomy described in KX documentation, the following categories have **partial** or **no** support by the IPC encoder/decoder:
 
-- Enums (KX 20–76)
-- Nested/other types (KX 77+)
-- Function/derived/iterator types (KX 100–112)
-- Foreign objects (type `112`)
+### Partial support (decode-only)
+
+- **Enums (KX type -20 atom, 20 list)**: The decoder can safely deserialize enum atoms and enum lists as integer values (i32). The underlying symbol mapping is not reconstructed; only the numeric indices are preserved. Encoding of enums is not yet supported. This conservative approach avoids unbounded allocations and maintains compatibility with the existing K API.
+  - Security: Enum deserialization performs bounds checking and respects MAX_LIST_SIZE limits to prevent OOM attacks.
+  - Implementation: Enum atoms are stored as INT_ATOM-compatible values, and enum lists are stored as INT_LIST-compatible vectors.
+
+- **Foreign objects (type 112)**: The decoder can safely deserialize foreign objects as opaque byte payloads (Vec<u8>). No interpretation of the payload structure is performed. Encoding of foreign objects is not yet supported.
+  - Security: Foreign object deserialization validates payload length against MAX_LIST_SIZE before allocation, preventing excessive memory consumption.
+  - Implementation: Foreign objects are stored internally as BYTE_LIST-compatible vectors with the FOREIGN type marker.
+
+### Not supported
+
+- Nested/other types (KX 77+) beyond foreign objects
+- Function/derived/iterator types (KX 100–111, 113+)
 
 For implementation notes and deeper coverage discussions, please refer to the documentation site and repository history.
 

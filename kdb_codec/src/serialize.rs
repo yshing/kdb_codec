@@ -59,6 +59,7 @@ fn serialize_q(obj: &K, stream: &mut Vec<u8>) {
         qtype::REAL_ATOM => serialize_real(obj, stream),
         qtype::FLOAT_ATOM | qtype::DATETIME_ATOM => serialize_float(obj, stream),
         qtype::SYMBOL_ATOM => serialize_symbol(obj, stream),
+        qtype::ENUM_ATOM => serialize_enum_atom(obj, stream),
         qtype::COMPOUND_LIST => serialize_compound_list(obj, stream),
         qtype::BOOL_LIST | qtype::BYTE_LIST => serialize_byte_list(obj, stream),
         qtype::GUID_LIST => serialize_guid_list(obj, stream),
@@ -76,9 +77,11 @@ fn serialize_q(obj: &K, stream: &mut Vec<u8>) {
         qtype::FLOAT_LIST | qtype::DATETIME_LIST => serialize_float_list(obj, stream),
         qtype::STRING => serialize_string(obj, stream),
         qtype::SYMBOL_LIST => serialize_symbol_list(obj, stream),
+        qtype::ENUM_LIST => serialize_enum_list(obj, stream),
         qtype::TABLE => serialize_table(obj, stream),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => serialize_dictionary(obj, stream),
         qtype::NULL => serialize_null(stream),
+        qtype::FOREIGN => serialize_foreign(obj, stream),
         _ => unimplemented!(),
     };
 }
@@ -407,4 +410,77 @@ fn serialize_null(stream: &mut Vec<u8>) {
     stream.push(0x65);
     // Data
     stream.push(0x00);
+}
+
+fn serialize_enum_atom(obj: &K, stream: &mut Vec<u8>) {
+    // Type byte
+    stream.push(obj.0.qtype as u8);
+    
+    // Domain name (null-terminated string)
+    if let Some(ref domain) = obj.0.enum_domain {
+        stream.extend_from_slice(domain.as_bytes());
+    }
+    stream.push(0x00); // Null terminator
+    
+    // Value (4-byte integer)
+    let value = obj.get_int().unwrap();
+    if ENCODING == 0 {
+        stream.extend_from_slice(&value.to_be_bytes());
+    } else {
+        stream.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn serialize_enum_list(obj: &K, stream: &mut Vec<u8>) {
+    // Type byte
+    stream.push(obj.0.qtype as u8);
+    
+    // Attribute
+    stream.push(obj.0.attribute as u8);
+    
+    // Size
+    let list = obj.as_vec::<I>().unwrap();
+    let size = list.len() as i32;
+    if ENCODING == 0 {
+        stream.extend_from_slice(&size.to_be_bytes());
+    } else {
+        stream.extend_from_slice(&size.to_le_bytes());
+    }
+    
+    // Domain name (null-terminated string)
+    if let Some(ref domain) = obj.0.enum_domain {
+        stream.extend_from_slice(domain.as_bytes());
+    }
+    stream.push(0x00); // Null terminator
+    
+    // Values (4-byte integers)
+    if ENCODING == 0 {
+        for &element in list {
+            stream.extend_from_slice(&element.to_be_bytes());
+        }
+    } else {
+        for &element in list {
+            stream.extend_from_slice(&element.to_le_bytes());
+        }
+    }
+}
+
+fn serialize_foreign(obj: &K, stream: &mut Vec<u8>) {
+    // Type byte
+    stream.push(obj.0.qtype as u8);
+    
+    // Attribute
+    stream.push(obj.0.attribute as u8);
+    
+    // Length
+    let payload = obj.as_vec::<G>().unwrap();
+    let length = payload.len() as i32;
+    if ENCODING == 0 {
+        stream.extend_from_slice(&length.to_be_bytes());
+    } else {
+        stream.extend_from_slice(&length.to_le_bytes());
+    }
+    
+    // Payload bytes
+    stream.extend_from_slice(payload);
 }
