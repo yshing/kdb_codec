@@ -100,7 +100,7 @@ fn test_accept_reasonable_message_size() {
 
     // Should return Ok(None) because we don't have the full message yet
     assert!(result.is_ok());
-    // assert_eq!(result.unwrap(), None);
+    assert!(result.unwrap().is_none());
 }
 
 #[test]
