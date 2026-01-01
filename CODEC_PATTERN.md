@@ -13,7 +13,6 @@ The kdb-codec implementation provides a clean, idiomatic Rust interface for kdb+
 1. **KdbCodec**: The main codec struct implementing `Encoder` and `Decoder` traits
 2. **MessageHeader**: Represents the 8-byte kdb+ IPC message header
 3. **KdbMessage**: Wrapper for outgoing messages (K object + message type)
-4. **KdbResponse**: Wrapper for incoming messages (K object + message type)
 
 ### Benefits of the Codec Pattern
 
@@ -242,7 +241,7 @@ The `Decoder` trait implementation:
 - Waits for complete message arrival
 - **Handles decompression automatically when the compressed flag is set**
 - Deserializes the payload using synchronous deserialization
-- Returns a `KdbResponse` with message type and K object
+- Returns a `KdbMessage` with message type and K object
 
 **Decompression Logic:**
 - Automatically detects compressed messages via the header flag

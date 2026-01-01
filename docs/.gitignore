@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output
+.vitepress/dist/
+.vitepress/cache/
+
+# Logs
+*.log
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Bun
+bun.lockb
