@@ -46,7 +46,11 @@ fn main() -> Result<()> {
 }
 
 fn test_compression(is_local: bool, mode: CompressionMode, message: KdbMessage) {
-    let mut codec = KdbCodec::with_options(is_local, mode, ValidationMode::Strict);
+    let mut codec = KdbCodec::builder()
+        .is_local(is_local)
+        .compression_mode(mode)
+        .validation_mode(ValidationMode::Strict)
+        .build();
     let mut buffer = BytesMut::new();
 
     // Encode the message
@@ -68,7 +72,11 @@ fn test_compression(is_local: bool, mode: CompressionMode, message: KdbMessage) 
 }
 
 fn test_validation_strict() {
-    let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+    let mut codec = KdbCodec::builder()
+        .is_local(false)
+        .compression_mode(CompressionMode::Never)
+        .validation_mode(ValidationMode::Strict)
+        .build();
     let mut buffer = BytesMut::new();
 
     // Create a message with invalid compressed flag (2)
@@ -86,7 +94,11 @@ fn test_validation_strict() {
 }
 
 fn test_validation_lenient() {
-    let mut codec = KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Lenient);
+    let mut codec = KdbCodec::builder()
+        .is_local(false)
+        .compression_mode(CompressionMode::Never)
+        .validation_mode(ValidationMode::Lenient)
+        .build();
 
     // Encode a small valid message first to get proper payload
     let small_message = KdbMessage::new(qmsg_type::synchronous, K::new_int(42));

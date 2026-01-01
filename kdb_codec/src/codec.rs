@@ -156,6 +156,14 @@ pub struct KdbCodec {
     compression_mode: CompressionMode,
     /// Validation mode for decoding
     validation_mode: ValidationMode,
+    /// Maximum allowed list size during deserialization
+    max_list_size: usize,
+    /// Maximum recursion depth for nested structures
+    max_recursion_depth: usize,
+    /// Maximum allowed message size in bytes (None = unlimited)
+    max_message_size: Option<usize>,
+    /// Maximum allowed decompressed message size in bytes (None = unlimited)
+    max_decompressed_size: Option<usize>,
 }
 
 #[bon::bon]
@@ -169,6 +177,10 @@ impl KdbCodec {
             is_local,
             compression_mode: CompressionMode::Auto,
             validation_mode: ValidationMode::Strict,
+            max_list_size: crate::MAX_LIST_SIZE,
+            max_recursion_depth: crate::MAX_RECURSION_DEPTH,
+            max_message_size: Some(crate::MAX_MESSAGE_SIZE),
+            max_decompressed_size: Some(crate::MAX_DECOMPRESSED_SIZE),
         }
     }
 
@@ -178,23 +190,37 @@ impl KdbCodec {
     /// - `is_local`: Whether the connection is within the same host (affects compression in Auto mode)
     /// - `compression_mode`: How to handle message compression
     /// - `validation_mode`: How strictly to validate incoming messages
+    /// - `max_list_size`: Maximum allowed list size during deserialization (default: 100 million)
+    /// - `max_recursion_depth`: Maximum recursion depth for nested structures (default: 100)
     ///
     /// # Example
     /// ```
     /// use kdb_codec::{KdbCodec, CompressionMode, ValidationMode};
     ///
-    /// // Always compress, lenient validation
-    /// let codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Lenient);
+    /// // Always compress, lenient validation, custom limits
+    /// let codec = KdbCodec::with_options(
+    ///     false,
+    ///     CompressionMode::Always,
+    ///     ValidationMode::Lenient,
+    ///     50_000_000, // 50M max list size
+    ///     50          // 50 max recursion depth
+    /// );
     /// ```
     pub fn with_options(
         is_local: bool,
         compression_mode: CompressionMode,
         validation_mode: ValidationMode,
+        max_list_size: usize,
+        max_recursion_depth: usize,
     ) -> Self {
         KdbCodec {
             is_local,
             compression_mode,
             validation_mode,
+            max_list_size,
+            max_recursion_depth,
+            max_message_size: Some(crate::MAX_MESSAGE_SIZE),
+            max_decompressed_size: Some(crate::MAX_DECOMPRESSED_SIZE),
         }
     }
 
@@ -204,23 +230,38 @@ impl KdbCodec {
     /// ```
     /// use kdb_codec::{KdbCodec, CompressionMode, ValidationMode};
     ///
-    /// // Using builder pattern
+    /// // Using builder pattern with default limits enabled
     /// let codec = KdbCodec::builder()
     ///     .is_local(false)
     ///     .compression_mode(CompressionMode::Always)
-    ///     .validation_mode(ValidationMode::Lenient)
+    ///     .validation_mode(ValidationMode::Strict)
+    ///     .max_list_size(5_000_000)
+    ///     .max_recursion_depth(50)
+    ///     .max_message_size(128 * 1024 * 1024)  // 128 MB  
+    ///     .max_decompressed_size(256 * 1024 * 1024)  // 256 MB
     ///     .build();
+    ///
+    /// // Note: max_message_size and max_decompressed_size default to None (no limit)
+    /// // It's recommended to set these for untrusted connections
     /// ```
     #[builder]
     pub fn builder(
         #[builder(default = false)] is_local: bool,
         #[builder(default)] compression_mode: CompressionMode,
         #[builder(default)] validation_mode: ValidationMode,
+        #[builder(default = crate::MAX_LIST_SIZE)] max_list_size: usize,
+        #[builder(default = crate::MAX_RECURSION_DEPTH)] max_recursion_depth: usize,
+        max_message_size: Option<usize>,
+        max_decompressed_size: Option<usize>,
     ) -> Self {
         KdbCodec {
             is_local,
             compression_mode,
             validation_mode,
+            max_list_size,
+            max_recursion_depth,
+            max_message_size,
+            max_decompressed_size,
         }
     }
 
@@ -242,6 +283,46 @@ impl KdbCodec {
     /// Get the current validation mode
     pub fn validation_mode(&self) -> ValidationMode {
         self.validation_mode
+    }
+
+    /// Set the maximum list size
+    pub fn set_max_list_size(&mut self, size: usize) {
+        self.max_list_size = size;
+    }
+
+    /// Get the current maximum list size
+    pub fn max_list_size(&self) -> usize {
+        self.max_list_size
+    }
+
+    /// Set the maximum recursion depth
+    pub fn set_max_recursion_depth(&mut self, depth: usize) {
+        self.max_recursion_depth = depth;
+    }
+
+    /// Get the current maximum recursion depth
+    pub fn max_recursion_depth(&self) -> usize {
+        self.max_recursion_depth
+    }
+
+    /// Set the maximum message size (None = unlimited)
+    pub fn set_max_message_size(&mut self, size: Option<usize>) {
+        self.max_message_size = size;
+    }
+
+    /// Get the current maximum message size
+    pub fn max_message_size(&self) -> Option<usize> {
+        self.max_message_size
+    }
+
+    /// Set the maximum decompressed message size (None = unlimited)
+    pub fn set_max_decompressed_size(&mut self, size: Option<usize>) {
+        self.max_decompressed_size = size;
+    }
+
+    /// Get the current maximum decompressed message size
+    pub fn max_decompressed_size(&self) -> Option<usize> {
+        self.max_decompressed_size
     }
 }
 
@@ -378,6 +459,31 @@ impl Decoder for KdbCodec {
 
         // Check if we have the complete message
         let total_length = header.length as usize;
+
+        // Validate message size is at least header size
+        if total_length < HEADER_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Invalid message size: {}. Must be at least {} bytes (header size)",
+                    total_length, HEADER_SIZE
+                ),
+            ));
+        }
+
+        // Validate message size against maximum (if configured)
+        if let Some(max_size) = self.max_message_size {
+            if total_length > max_size {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Message size {} exceeds maximum allowed size of {} bytes",
+                        total_length, max_size
+                    ),
+                ));
+            }
+        }
+
         if src.len() < total_length {
             // Reserve space for the rest of the message
             src.reserve(total_length - src.len());
@@ -392,14 +498,25 @@ impl Decoder for KdbCodec {
 
         // Handle decompression if needed
         let decoded_payload = if header.compressed == 1 {
-            // Decompress the payload
-            decompress_sync(payload_data.to_vec(), header.encoding)
+            // Decompress the payload (size validation happens inside decompress_sync before allocation)
+            decompress_sync(
+                payload_data.to_vec(),
+                header.encoding,
+                self.max_decompressed_size,
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
         } else {
             payload_data.to_vec()
         };
 
-        // Deserialize the K object
-        let k_object = q_ipc_decode_sync(&decoded_payload, header.encoding);
+        // Deserialize the K object - now returns Result
+        let k_object = q_ipc_decode_sync(
+            &decoded_payload,
+            header.encoding,
+            self.max_list_size,
+            self.max_recursion_depth,
+        )
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         Ok(Some(KdbMessage {
             message_type: header.message_type,
@@ -594,16 +711,25 @@ pub fn compress_sync(raw: Vec<u8>) -> (bool, Vec<u8>) {
 /// - `encoding`:
 ///   - `0`: Big Endian
 ///   - `1`: Little Endian.
+/// - `max_decompressed_size`: Maximum allowed decompressed size in bytes (None = unlimited).
+///   This limit is checked **before** allocating memory to prevent decompression bombs.
 ///
-/// # Panics
-/// This function will panic if the compressed data is malformed. This includes:
+/// # Errors
+/// Returns an error if the compressed data is malformed. This includes:
 /// - Size field less than 8 bytes
+/// - Decompressed size exceeds max_decompressed_size limit
 /// - Invalid format that doesn't match kdb+ compression structure
+/// - Unexpected end of compressed data
+/// - Insufficient data for back-references
 ///
 /// # Note
 /// This function implements the kdb+ IPC compression algorithm which has been tested
-/// in production. Future improvements could include returning Result for better error handling.
-pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
+/// in production.
+pub fn decompress_sync(
+    compressed: Vec<u8>,
+    encoding: u8,
+    max_decompressed_size: Option<usize>,
+) -> Result<Vec<u8>> {
     let mut n = 0;
     let mut r: usize;
     let mut f = 0_usize;
@@ -614,30 +740,49 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     let mut p = s;
     let mut i = 0_usize;
 
+    // Validate minimum compressed data length before accessing
+    if compressed.len() < 4 {
+        return Err(Error::DeserializationError(format!(
+            "Invalid compressed data: need at least 4 bytes for size field, got {}",
+            compressed.len()
+        )));
+    }
+
     // Read the uncompressed size from the compressed data
     // Subtract 8 bytes from decoded bytes size as 8 bytes have already been taken as header
     let size_with_header = match encoding {
-        0 => i32::from_be_bytes(
-            compressed[0..4]
-                .try_into()
-                .expect("Invalid compressed data: header size field must be 4 bytes"),
-        ),
-        _ => i32::from_le_bytes(
-            compressed[0..4]
-                .try_into()
-                .expect("Invalid compressed data: header size field must be 4 bytes"),
-        ),
+        0 => i32::from_be_bytes(compressed[0..4].try_into().map_err(|_| {
+            Error::DeserializationError(
+                "Invalid compressed data: header size field must be 4 bytes".to_string(),
+            )
+        })?),
+        _ => i32::from_le_bytes(compressed[0..4].try_into().map_err(|_| {
+            Error::DeserializationError(
+                "Invalid compressed data: header size field must be 4 bytes".to_string(),
+            )
+        })?),
     };
 
     // Validate size is positive and reasonable
     if size_with_header < 8 {
-        panic!(
+        return Err(Error::DeserializationError(format!(
             "Invalid compressed data: size {} is less than minimum header size",
             size_with_header
-        );
+        )));
     }
 
     let size = (size_with_header - 8) as usize;
+
+    // CRITICAL: Validate decompressed size BEFORE allocating memory to prevent decompression bombs
+    if let Some(max_size) = max_decompressed_size {
+        if size > max_size {
+            return Err(Error::DeserializationError(format!(
+                "Decompressed size {} exceeds maximum allowed size {} (possible compression bomb)",
+                size, max_size
+            )));
+        }
+    }
+
     let mut decompressed: Vec<u8> = Vec::with_capacity(size);
     // Assure that vector is filled with 0
     decompressed.resize(size, 0_u8);
@@ -648,25 +793,87 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
     let mut aa = [0_i32; 256];
     while s < decompressed.len() {
         if i == 0 {
+            if d >= compressed.len() {
+                return Err(Error::DeserializationError(
+                    "Invalid compressed data: unexpected end of compressed data".to_string(),
+                ));
+            }
             f = (0xff & compressed[d]) as usize;
             d += 1;
             i = 1;
         }
         if (f & i) != 0 {
+            if d + 2 > compressed.len() {
+                return Err(Error::DeserializationError(
+                    "Invalid compressed data: insufficient data for back-reference".to_string(),
+                ));
+            }
             r = aa[(0xff & compressed[d]) as usize] as usize;
             d += 1;
+            // Validate back-reference is within bounds
+            if r >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: back-reference {} exceeds buffer size {}",
+                    r,
+                    decompressed.len()
+                )));
+            }
+            if s >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write index {} exceeds buffer size {}",
+                    s,
+                    decompressed.len()
+                )));
+            }
             decompressed[s] = decompressed[r];
             s += 1;
             r += 1;
+            if r >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: back-reference {} exceeds buffer size {}",
+                    r,
+                    decompressed.len()
+                )));
+            }
+            if s >= decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write index {} exceeds buffer size {}",
+                    s,
+                    decompressed.len()
+                )));
+            }
             decompressed[s] = decompressed[r];
             s += 1;
             r += 1;
             n = (0xff & compressed[d]) as usize;
             d += 1;
+            // Validate back-reference + length doesn't exceed bounds
+            if r + n > decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: back-reference range {}..{} exceeds buffer size {}",
+                    r,
+                    r + n,
+                    decompressed.len()
+                )));
+            }
+            // Validate write side doesn't exceed bounds
+            if s + n > decompressed.len() {
+                return Err(Error::DeserializationError(format!(
+                    "Invalid compressed data: write range {}..{} exceeds buffer size {}",
+                    s,
+                    s + n,
+                    decompressed.len()
+                )));
+            }
             for m in 0..n {
                 decompressed[s + m] = decompressed[r + m];
             }
         } else {
+            if d >= compressed.len() {
+                return Err(Error::DeserializationError(
+                    "Invalid compressed data: unexpected end of compressed data".to_string(),
+                ));
+            }
             decompressed[s] = compressed[d];
             s += 1;
             d += 1;
@@ -684,7 +891,7 @@ pub fn decompress_sync(compressed: Vec<u8>, encoding: u8) -> Vec<u8> {
             i = 0;
         }
     }
-    decompressed
+    Ok(decompressed)
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
@@ -880,7 +1087,8 @@ mod tests {
         // Now decompress - skip header (bytes 0-7) to simulate what Decoder does
         // This is the KEY insight: Decoder removes the header before calling decompress_sync
         let payload_data = &compressed_data[HEADER_SIZE..];
-        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
+        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING, None)
+            .expect("Decompression should succeed");
 
         // The decompressed data should match the original payload (without header)
         assert_eq!(
@@ -915,7 +1123,8 @@ mod tests {
 
         // Decompress - skip the header as Decoder does
         let payload_data = &compressed_data[HEADER_SIZE..];
-        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING);
+        let decompressed = decompress_sync(payload_data.to_vec(), ENCODING, None)
+            .expect("Decompression should succeed");
 
         // Should match original payload
         assert_eq!(decompressed, large_payload);
@@ -957,8 +1166,11 @@ mod tests {
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Never mode
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Never)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
@@ -974,8 +1186,11 @@ mod tests {
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Always mode with local connection
-        let mut codec =
-            KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(true)
+            .compression_mode(CompressionMode::Always)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
@@ -994,7 +1209,11 @@ mod tests {
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Auto mode with local connection
-        let mut codec = KdbCodec::with_options(true, CompressionMode::Auto, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(true)
+            .compression_mode(CompressionMode::Auto)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
@@ -1013,8 +1232,11 @@ mod tests {
         let message = KdbMessage::new(qmsg_type::synchronous, large_list);
 
         // Use Auto mode with remote connection
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Auto)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 
@@ -1029,8 +1251,11 @@ mod tests {
     #[test]
     fn test_validation_mode_strict_invalid_compressed() {
         // Test that strict mode rejects invalid compressed flag
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Never)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
 
         // Create a message with invalid compressed flag (2)
@@ -1055,8 +1280,11 @@ mod tests {
     #[test]
     fn test_validation_mode_strict_invalid_message_type() {
         // Test that strict mode rejects invalid message type
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Never)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
 
         // Create a message with invalid message type (3)
@@ -1081,8 +1309,11 @@ mod tests {
     #[test]
     fn test_validation_mode_lenient_accepts_invalid() {
         // Test that lenient mode accepts invalid values
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Never, ValidationMode::Lenient);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Never)
+            .validation_mode(ValidationMode::Lenient)
+            .build();
 
         // Create a small valid K object for the payload
         let small_int = k!(int: 42);
@@ -1138,8 +1369,11 @@ mod tests {
         let message = KdbMessage::new(qmsg_type::synchronous, small_int);
 
         // Use Always mode
-        let mut codec =
-            KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
+        let mut codec = KdbCodec::builder()
+            .is_local(false)
+            .compression_mode(CompressionMode::Always)
+            .validation_mode(ValidationMode::Strict)
+            .build();
         let mut buffer = BytesMut::new();
         codec.encode(message, &mut buffer).unwrap();
 

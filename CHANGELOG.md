@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-02
+
+### Security
+
+- Hardened IPC deserialization against malformed/untrusted input (panic-free decoding)
+- Added additional bounds/resource checks to reduce risk of memory exhaustion during decode
+
+### Changed
+
+- Improved error messaging for unsupported/invalid q type bytes
+
+### Documentation
+
+- Simplified README and linked to the hosted documentation site
+- Added a docs page describing supported type mapping and coverage
+
 ## [0.3.0] - 2025-12-30
 
 ### Added
@@ -61,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release with core kdb+ IPC codec functionality.
 
-[Unreleased]: https://github.com/yshing/kdb_codec/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/yshing/kdb_codec/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/yshing/kdb_codec/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/yshing/kdb_codec/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/yshing/kdb_codec/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yshing/kdb_codec/releases/tag/v0.1.0

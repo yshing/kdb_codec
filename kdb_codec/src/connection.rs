@@ -374,7 +374,11 @@ impl QStream {
             ConnectionMethod::TCP => {
                 let stream = connect_tcp(host, port, credential).await?;
                 let is_local = matches!(host, "localhost" | "127.0.0.1");
-                let codec = KdbCodec::with_options(is_local, compression_mode, validation_mode);
+                let codec = KdbCodec::builder()
+                    .is_local(is_local)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build();
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Tcp(framed),
@@ -384,7 +388,11 @@ impl QStream {
             }
             ConnectionMethod::TLS => {
                 let stream = connect_tls(host, port, credential).await?;
-                let codec = KdbCodec::with_options(false, compression_mode, validation_mode); // TLS is always remote
+                let codec = KdbCodec::builder()
+                    .is_local(false)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build(); // TLS is always remote
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Tls(framed),
@@ -394,7 +402,11 @@ impl QStream {
             }
             ConnectionMethod::UDS => {
                 let stream = connect_uds(port, credential).await?;
-                let codec = KdbCodec::with_options(true, compression_mode, validation_mode); // UDS is always local
+                let codec = KdbCodec::builder()
+                    .is_local(true)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build(); // UDS is always local
                 let framed = Framed::new(stream, codec);
                 Ok(QStream::new(
                     FramedStream::Uds(framed),
@@ -517,7 +529,11 @@ impl QStream {
                 }
                 // Check if the connection is local
                 let is_local = ip_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-                let codec = KdbCodec::with_options(is_local, compression_mode, validation_mode);
+                let codec = KdbCodec::builder()
+                    .is_local(is_local)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build();
                 let framed = Framed::new(socket, codec);
                 Ok(QStream::new(
                     FramedStream::Tcp(framed),
@@ -549,7 +565,11 @@ impl QStream {
                         .expect("failed to accept TLS connection");
                 }
                 // TLS is always a remote connection
-                let codec = KdbCodec::with_options(false, compression_mode, validation_mode);
+                let codec = KdbCodec::builder()
+                    .is_local(false)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build();
                 let framed = Framed::new(tls_socket, codec);
                 let mut qstream =
                     QStream::new(FramedStream::Tls(framed), ConnectionMethod::TLS, true);
@@ -575,7 +595,11 @@ impl QStream {
                     socket = listener.accept().await?.0;
                 }
                 // UDS is always a local connection
-                let codec = KdbCodec::with_options(true, compression_mode, validation_mode);
+                let codec = KdbCodec::builder()
+                    .is_local(true)
+                    .compression_mode(compression_mode)
+                    .validation_mode(validation_mode)
+                    .build();
                 let framed = Framed::new(socket, codec);
                 Ok(QStream::new(
                     FramedStream::Uds(framed),

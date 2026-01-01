@@ -73,3 +73,4 @@ async fn main() -> Result<()> {
 - [Codec Pattern](/guide/codec-pattern) - Learn about the tokio codec architecture
 - [K Macro](/guide/k-macro) - Simplified data construction
 - [Index Trait](/guide/index-trait) - Ergonomic data access with [] syntax
+- [Type Mapping & Coverage](/guide/type-mapping) - Supported IPC types and missing types

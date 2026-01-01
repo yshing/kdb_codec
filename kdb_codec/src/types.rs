@@ -1226,8 +1226,10 @@ impl K {
     /// This constructor can return an error object whose type is `qtype::ERROR`. In that case the error message can be
     ///  retrieved by [`get_symbol`](#fn.get_symbol).
     pub fn new_dictionary(keys: K, values: K) -> Result<Self> {
-        if keys.len() != values.len() {
-            Err(Error::length_mismatch(keys.len(), values.len()))
+        let key_length = keys.len();
+        let value_length = values.len();
+        if key_length != value_length {
+            Err(Error::length_mismatch(key_length, value_length))
         } else {
             let qtype = if keys.0.attribute == qattribute::SORTED {
                 qtype::SORTED_DICTIONARY
@@ -1286,7 +1288,9 @@ impl K {
         match self.0.qtype {
             qtype::BOOL_ATOM => match self.0.value {
                 k0_inner::byte(boolean) => Ok(boolean != 0),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for BOOL_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::BOOL_ATOM)),
         }
@@ -1309,7 +1313,9 @@ impl K {
         match self.0.qtype {
             qtype::GUID_ATOM => match self.0.value {
                 k0_inner::guid(guid) => Ok(guid),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for GUID_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::GUID_ATOM)),
         }
@@ -1332,7 +1338,9 @@ impl K {
         match self.0.qtype {
             qtype::BOOL_ATOM | qtype::BYTE_ATOM | qtype::CHAR => match self.0.value {
                 k0_inner::byte(byte) => Ok(byte),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for BYTE_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::BYTE_ATOM)),
         }
@@ -1352,7 +1360,9 @@ impl K {
         match self.0.qtype {
             qtype::SHORT_ATOM => match self.0.value {
                 k0_inner::short(short) => Ok(short),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for SHORT_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::SHORT_ATOM)),
         }
@@ -1383,7 +1393,9 @@ impl K {
             | qtype::SECOND_ATOM
             | qtype::TIME_ATOM => match self.0.value {
                 k0_inner::int(int) => Ok(int),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for INT_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::INT_ATOM)),
         }
@@ -1406,7 +1418,9 @@ impl K {
         match self.0.qtype {
             qtype::LONG_ATOM | qtype::TIMESTAMP_ATOM | qtype::TIMESPAN_ATOM => match self.0.value {
                 k0_inner::long(long) => Ok(long),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for LONG_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::LONG_ATOM)),
         }
@@ -1426,7 +1440,9 @@ impl K {
         match self.0.qtype {
             qtype::REAL_ATOM => match self.0.value {
                 k0_inner::real(real) => Ok(real),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for REAL_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::REAL_ATOM)),
         }
@@ -1448,7 +1464,9 @@ impl K {
         match self.0.qtype {
             qtype::FLOAT_ATOM | qtype::DATETIME_ATOM => match self.0.value {
                 k0_inner::float(float) => Ok(float),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for FLOAT_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::FLOAT_ATOM)),
         }
@@ -1468,7 +1486,9 @@ impl K {
         match self.0.qtype {
             qtype::CHAR => match self.0.value {
                 k0_inner::byte(ch) => Ok(ch as char),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for CHAR".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::CHAR)),
         }
@@ -1488,7 +1508,9 @@ impl K {
         match self.0.qtype {
             qtype::SYMBOL_ATOM => match &self.0.value {
                 k0_inner::symbol(symbol) => Ok(symbol),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for SYMBOL_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::SYMBOL_ATOM)),
         }
@@ -1524,7 +1546,9 @@ impl K {
         match self.0.qtype {
             qtype::TIMESTAMP_ATOM => match self.0.value {
                 k0_inner::long(nanos) => Ok(q_timestamp_to_datetime(nanos)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for TIMESTAMP_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::TIMESTAMP_ATOM)),
         }
@@ -1548,7 +1572,9 @@ impl K {
         match self.0.qtype {
             qtype::MONTH_ATOM => match self.0.value {
                 k0_inner::int(months) => Ok(q_month_to_date(months)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for MONTH_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::MONTH_ATOM)),
         }
@@ -1572,7 +1598,9 @@ impl K {
         match self.0.qtype {
             qtype::DATE_ATOM => match self.0.value {
                 k0_inner::int(days) => Ok(q_date_to_date(days)?),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for DATE_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::DATE_ATOM)),
         }
@@ -1608,7 +1636,9 @@ impl K {
         match self.0.qtype {
             qtype::DATETIME_ATOM => match self.0.value {
                 k0_inner::float(days) => Ok(q_datetime_to_datetime(days)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for DATETIME_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::DATETIME_ATOM)),
         }
@@ -1632,7 +1662,9 @@ impl K {
         match self.0.qtype {
             qtype::TIMESPAN_ATOM => match self.0.value {
                 k0_inner::long(nanos) => Ok(q_timespan_to_duration(nanos)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for TIMESPAN_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::TIMESPAN_ATOM)),
         }
@@ -1653,7 +1685,9 @@ impl K {
         match self.0.qtype {
             qtype::MINUTE_ATOM => match self.0.value {
                 k0_inner::int(minutes) => Ok(q_minute_to_duration(minutes)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for MINUTE_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::MINUTE_ATOM)),
         }
@@ -1674,7 +1708,9 @@ impl K {
         match self.0.qtype {
             qtype::SECOND_ATOM => match self.0.value {
                 k0_inner::int(seconds) => Ok(q_second_to_duration(seconds)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for SECOND_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::SECOND_ATOM)),
         }
@@ -1695,7 +1731,9 @@ impl K {
         match self.0.qtype {
             qtype::TIME_ATOM => match self.0.value {
                 k0_inner::int(millis) => Ok(q_time_to_duration(millis)),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for TIME_ATOM".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::TIME_ATOM)),
         }
@@ -1734,7 +1772,9 @@ impl K {
         match self.0.qtype {
             qtype::TABLE => match &self.0.value {
                 k0_inner::table(dictionary) => Ok(dictionary),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for TABLE (dictionary)".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::TABLE)),
         }
@@ -1783,7 +1823,9 @@ impl K {
         match self.0.qtype {
             qtype::TABLE => match &mut self.0.value {
                 k0_inner::table(dictionary) => Ok(dictionary),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for TABLE (dictionary)".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::TABLE)),
         }
@@ -1808,7 +1850,9 @@ impl K {
         match self.0.qtype {
             qtype::ERROR => match &self.0.value {
                 k0_inner::symbol(error) => Ok(error),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for ERROR".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::ERROR)),
         }
@@ -1828,7 +1872,9 @@ impl K {
         match self.0.qtype {
             qtype::STRING => match &self.0.value {
                 k0_inner::symbol(string) => Ok(string),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for STRING".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::STRING)),
         }
@@ -1849,7 +1895,9 @@ impl K {
         match self.0.qtype {
             qtype::STRING => match &mut self.0.value {
                 k0_inner::symbol(string) => Ok(string),
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for STRING".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::STRING)),
         }
@@ -1905,7 +1953,9 @@ impl K {
                     Some(vector) => Ok(vector),
                     _ => Err(Error::invalid_cast_list(self.0.qtype)),
                 },
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object: expected list payload".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast_list(self.0.qtype)),
         }
@@ -1950,7 +2000,9 @@ impl K {
                     Some(vector) => Ok(vector),
                     _ => Err(Error::invalid_cast_list(self.0.qtype)),
                 },
-                _ => unreachable!(),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object: expected list payload".to_string(),
+                )),
             },
             _ => Err(Error::invalid_cast_list(self.0.qtype)),
         }
@@ -2223,7 +2275,9 @@ impl K {
     fn increment(&mut self) {
         match &mut self.0.value {
             k0_inner::list(list) => list.n += 1,
-            _ => unreachable!(),
+            _ => {
+                debug_assert!(false, "increment called on non-list K");
+            }
         }
     }
 
@@ -2231,7 +2285,9 @@ impl K {
     fn decrement(&mut self) {
         match &mut self.0.value {
             k0_inner::list(list) => list.n -= 1,
-            _ => unreachable!(),
+            _ => {
+                debug_assert!(false, "decrement called on non-list K");
+            }
         }
     }
 
@@ -4304,44 +4360,54 @@ impl K {
                     k0_inner::symbol(string) => string.len(),
                     // The other lists.
                     k0_inner::list(list) => list.n as usize,
-                    _ => unreachable!(),
+                    // Malformed internal state (can happen for invalid IPC inputs)
+                    _ => 0,
                 }
             }
             qtype::TABLE => {
                 // Table
-                match &self.0.value {
-                    k0_inner::table(dictionary) => {
-                        // Dictionary is a vector of [K (keys), K (values)]
-                        // values is assured to be a list of K as this is a table type.
-                        // Retrieve the first column and get its length.
-                        match &dictionary.as_vec::<K>().unwrap()[1].as_vec::<K>().unwrap()[0]
-                            .0
-                            .value
-                        {
-                            k0_inner::list(column) => {
-                                // Return the number of rows
-                                column.n as usize
-                            }
-                            k0_inner::symbol(column) => {
-                                // char column
-                                // Return the number of rows
-                                column.len()
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    _ => unreachable!(),
+                let k0_inner::table(dictionary) = &self.0.value else {
+                    return 0;
+                };
+
+                // Dictionary is a vector of [K (keys), K (values)]
+                let Ok(dict_vec) = dictionary.as_vec::<K>() else {
+                    return 0;
+                };
+                let Some(values) = dict_vec.get(1) else {
+                    return 0;
+                };
+
+                // values should be a compound list of columns
+                let Ok(columns) = values.as_vec::<K>() else {
+                    return 0;
+                };
+                let Some(first_column) = columns.get(0) else {
+                    return 0;
+                };
+
+                match &first_column.0.value {
+                    k0_inner::list(column) => column.n as usize,
+                    // char column
+                    k0_inner::symbol(column) => column.len(),
+                    _ => 0,
                 }
             }
             qtype::DICTIONARY | qtype::SORTED_DICTIONARY => {
                 // Dictionary is a vector of [K (keys), K (values)]
                 // Get keys and return its length.
-                match &self.as_vec::<K>().unwrap()[0].0.value {
+                let Ok(dict_vec) = self.as_vec::<K>() else {
+                    return 0;
+                };
+                let Some(keys) = dict_vec.get(0) else {
+                    return 0;
+                };
+
+                match &keys.0.value {
                     k0_inner::list(list) => list.n as usize,
-                    // Keyed table
-                    // Get the number of rows by deligating it to table.len()
-                    k0_inner::table(_) => self.as_vec::<K>().unwrap()[0].len(),
-                    _ => unreachable!(),
+                    // Keyed table: get the number of rows by delegating to table.len()
+                    k0_inner::table(_) => keys.len(),
+                    _ => 0,
                 }
             }
             // Atom and general null
@@ -4548,7 +4614,9 @@ impl K {
                         // Flip joint dictionary to table
                         key_dictionary.flip()
                     }
-                    _ => unreachable!(),
+                    _ => Err(Error::DeserializationError(
+                        "invalid keyed table structure".to_string(),
+                    )),
                 }
             }
             // Not a keyed table. Return the original argument.

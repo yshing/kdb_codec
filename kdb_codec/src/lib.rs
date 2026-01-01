@@ -12,6 +12,28 @@
 //! - **Type Safety**: Strong typing for kdb+ data types
 //! - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 //!
+//! ## Security Constants
+//!
+//! The library provides default limits to prevent attacks, which can be customized
+//! via the `KdbCodec` builder or configuration methods:
+//! - `MAX_LIST_SIZE`: 100 million elements (default for max_list_size)
+//! - `MAX_RECURSION_DEPTH`: 100 levels (default for max_recursion_depth)
+//! - `MAX_MESSAGE_SIZE`: 256 MB (default for max_message_size)
+//! - `MAX_DECOMPRESSED_SIZE`: 512 MB (default for max_decompressed_size)
+//!
+//! These defaults are based on kdb+ database limits documented at:
+//! https://www.timestored.com/kdb-guides/kdb-database-limits
+//!
+//! These can be adjusted per codec instance using:
+//! ```no_run
+//! use kdb_codec::*;
+//!
+//! let codec = KdbCodec::builder()
+//!     .max_list_size(5_000_000)  // Custom limit
+//!     .max_recursion_depth(50)    // Custom depth
+//!     .build();
+//! ```
+//!
 //! ## Usage
 //!
 //! ### Basic Example
@@ -46,10 +68,14 @@
 //! // Auto mode (default): compress large messages on remote connections only
 //! let codec = KdbCodec::new(false);
 //!
-//! // Using with_options method
-//! let codec = KdbCodec::with_options(false, CompressionMode::Always, ValidationMode::Strict);
-//!
 //! // Using builder pattern (recommended)
+//! let codec = KdbCodec::builder()
+//!     .is_local(false)
+//!     .compression_mode(CompressionMode::Always)
+//!     .validation_mode(ValidationMode::Strict)
+//!     .build();
+//!
+//! // Using builder to disable compression
 //! let codec = KdbCodec::builder()
 //!     .is_local(false)
 //!     .compression_mode(CompressionMode::Never)
@@ -63,15 +89,22 @@
 //! use kdb_codec::*;
 //!
 //! // Strict mode (default): reject invalid headers
-//! let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
+//! let codec = KdbCodec::builder()
+//!     .is_local(false)
+//!     .compression_mode(CompressionMode::Auto)
+//!     .validation_mode(ValidationMode::Strict)
+//!     .build();
 //!
-//! // Using builder pattern
+//! // Using builder pattern for lenient validation
 //! let codec = KdbCodec::builder()
 //!     .validation_mode(ValidationMode::Lenient)
 //!     .build();
 //! ```
 //!
 //! ## Type Mapping
+//!
+//! Note: This table reflects the types currently supported by this library's IPC encoder/decoder.
+//! Not every q/kdb+ datatype is supported yet (e.g., enums, foreign objects, and function/derived types).
 //!
 //! All types are expressed as `K` struct. The table below shows the input types of each q type:
 //!
@@ -108,6 +141,63 @@
 //! - `QUDSPATH`: Optional path for Unix domain socket abstract namespace
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
+// >> Security Constants
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
+
+/// Maximum allowed list size during deserialization (100 million elements)
+///
+/// This is a conservative default to prevent memory exhaustion attacks while allowing
+/// most legitimate use cases. The actual kdb+ limit is 2^31-1 (2,147,483,647) elements,
+/// but attempting to allocate such large lists can cause memory issues.
+///
+/// Reference: https://www.timestored.com/kdb-guides/kdb-database-limits
+/// - kdb+ internal limit: 2 billion items (2^31)
+/// - IPC transfer limit: 2GB object size
+///
+/// This serves as the default value for `KdbCodec::max_list_size`.
+/// You can customize this limit per codec instance using the builder pattern.
+pub const MAX_LIST_SIZE: usize = 100_000_000;
+
+/// Maximum recursion depth for nested structures (100 levels)
+///
+/// This limit prevents stack overflow from deeply nested data structures.
+/// While kdb+ itself doesn't explicitly document a recursion limit, this default
+/// provides a reasonable balance between functionality and safety.
+///
+/// For most practical use cases, 100 levels of nesting is more than sufficient.
+/// Excessive nesting often indicates a data structure design issue.
+///
+/// This serves as the default value for `KdbCodec::max_recursion_depth`.
+/// You can customize this limit per codec instance using the builder pattern.
+pub const MAX_RECURSION_DEPTH: usize = 100;
+
+/// Maximum allowed message size in bytes (256 MB)
+///
+/// This limit protects against memory exhaustion from excessively large messages.
+/// The kdb+ IPC protocol has a documented 2GB transfer limit, but this default
+/// is more conservative to prevent resource exhaustion.
+///
+/// Reference: https://www.timestored.com/kdb-guides/kdb-database-limits
+/// - kdb+ IPC transfer limit: 2GB object size
+///
+/// Set to `None` to disable message size checking (not recommended for untrusted connections).
+/// This serves as the default value for `KdbCodec::max_message_size`.
+pub const MAX_MESSAGE_SIZE: usize = 256 * 1024 * 1024; // 256 MB
+
+/// Maximum allowed decompressed message size in bytes (512 MB)
+///
+/// This limit protects against compression bomb attacks where a small compressed
+/// message decompresses to an enormous size, causing memory exhaustion.
+///
+/// A compression bomb might send 1KB that decompresses to 1GB, causing denial of service.
+/// This limit ensures that even if compression is highly effective, the decompressed
+/// size remains reasonable.
+///
+/// Set to `None` to disable decompressed size checking (not recommended for untrusted connections).
+/// This serves as the default value for `KdbCodec::max_decompressed_size`.
+pub const MAX_DECOMPRESSED_SIZE: usize = 512 * 1024 * 1024; // 512 MB
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Module Declarations
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
@@ -121,7 +211,7 @@ mod qnull_inf;
 mod types;
 
 // IPC modules
-mod codec;
+pub mod codec;
 mod connection;
 mod deserialize_sync;
 mod format;

@@ -2,253 +2,49 @@
 
 [![Tests](https://github.com/yshing/kdb_codec/actions/workflows/test.yml/badge.svg)](https://github.com/yshing/kdb_codec/actions/workflows/test.yml)
 
-A Rust library focused on handling the kdb+ IPC (Inter-Process Communication) wire protocol. This library provides efficient encoding, decoding, and communication with q/kdb+ processes using idiomatic Rust patterns.
+Cancellation-safe Rust codec + client for the kdb+ IPC wire protocol (q/kdb+).
 
-**Inspired by the original [kdbplus](https://crates.io/crates/kdbplus) crate**, this library addresses critical **cancellation safety** issues while maintaining full compatibility with the kdb+ IPC protocol.
+Docs: https://yshing.github.io/kdb_codec/
 
-## Why This Library?
+## Key features
 
-The original kdbplus crate had a fundamental cancellation safety issue in its `receive_message()` implementation. When used with `tokio::select!` or other cancellation-aware patterns, partial reads could cause message corruption:
+- Cancellation-safe message framing via `tokio-util::codec::Framed`
+- IPC encode/decode, including kdb+ compression (`-18!`/`-19!`)
+- Async client API (`QStream`) and lower-level codec API (`KdbCodec`)
+- Multiple connection methods: TCP / TLS / Unix Domain Socket
+- Ergonomic `K` value type for building/inspecting q objects
 
-```rust
-// ⚠️ UNSAFE - could lose data on cancellation in original kdbplus
-select! {
-    msg = socket.receive_message() => { /* ... */ }
-    _ = timeout => { /* partial read gets lost */ }
-}
-```
-
-**Our Solution:** This library uses `tokio-util::codec::Framed` with a custom `KdbCodec`, ensuring true cancellation safety:
+## Quick start
 
 ```rust
-// ✅ SAFE - Framed maintains buffer state across cancellations
-let mut framed = Framed::new(stream, KdbCodec::new(true));
-select! {
-    msg = framed.next() => { /* buffer state preserved */ }
-    _ = timeout => { /* can safely retry */ }
-}
-```
-
-The Framed pattern maintains internal buffer state, so cancelled reads never lose data. All partial reads are preserved in the codec's buffer and properly reassembled on the next attempt.
-
-## Features
-
-- **Cancellation Safe**: Built on `tokio-util::codec::Framed` for true cancellation safety
-- **Tokio Codec Pattern**: Modern async/await interface with proper buffer management
-- **QStream Client**: High-level async client for q/kdb+ communication
-- **Intuitive Data Access**: Index trait for ergonomic K object access with `[]` syntax
-- **Full Compression Support**: Compatible with kdb+ `-18!` (compress) and `-19!` (decompress)
-- **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
-- **Type-Safe**: Strong typing for all kdb+ data types
-- **Minimal Dependencies**: No `async-recursion` or unnecessary proc-macros
-- **Zero-Copy Operations**: Efficient message handling with minimal allocations
-
-## Rust IPC Interface for q/kdb+
-
-This library provides a Rust client for communicating with q/kdb+ processes. Queries to kdb+ are supported in two ways:
-
-- **Text queries**: Send q code as strings
-- **Functional queries**: Represented as compound lists ([IPC details](https://code.kx.com/q4m3/11_IO/#116-interprocess-communication))
-
-Compression/decompression of messages is fully implemented following the [kdb+ specification](https://code.kx.com/q/basics/ipc/#compression).
-
-## Codec Pattern
-
-The library provides a tokio codec implementation for kdb+ IPC communication, offering a cleaner and more idiomatic Rust interface. The codec pattern leverages `tokio-util::codec` traits for efficient message framing and streaming with **guaranteed cancellation safety**.
-
-**Key Features:**
-- ✅ **Cancellation safe** - buffer state preserved across cancellations
-- ✅ Full compression/decompression support compatible with kdb+ (-18!/-19!)
-- ✅ Automatic message framing and buffering
-- ✅ Zero-copy operations where possible
-- ✅ Type-safe encoder/decoder traits
-- ✅ No `async-recursion` dependency (uses synchronous deserialization)
-
-See [CODEC_PATTERN.md](CODEC_PATTERN.md) for detailed documentation.
-
-**Quick Example:**
-```rust
+use futures::{SinkExt, StreamExt};
 use kdb_codec::*;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
-use futures::{SinkExt, StreamExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
     let mut framed = Framed::new(stream, KdbCodec::new(true));
-    
-    // Send query - cancellation safe!
+
     let query = K::new_string("1+1".to_string(), 0);
-    let msg = KdbMessage::new(qmsg_type::synchronous, query);
-    framed.send(msg).await?;
-    
-    // Receive response - even if cancelled, buffer state is preserved
-    if let Some(Ok(response)) = framed.next().await {
-        println!("Result: {}", response.payload);
-    }
-    Ok(())
-}
-```
-
-### Compression Control
-
-The codec provides explicit control over compression behavior:
-
-```rust
-use kdb_codec::*;
-
-// Auto mode (default): compress large messages on remote connections only
-let codec = KdbCodec::new(false);
-
-// Using with_options method
-let codec = KdbCodec::with_options(true, CompressionMode::Always, ValidationMode::Strict);
-
-// Using builder pattern (recommended)
-let codec = KdbCodec::builder()
-    .is_local(false)
-    .compression_mode(CompressionMode::Never)
-    .validation_mode(ValidationMode::Strict)
-    .build();
-```
-
-**Compression Modes:**
-- `Auto` (default): Compress large messages (>2000 bytes) only on remote connections
-- `Always`: Attempt to compress messages larger than 2000 bytes even on local connections
-- `Never`: Disable compression entirely
-
-### Header Validation
-
-The codec validates incoming message headers to detect protocol violations:
-
-```rust
-use kdb_codec::*;
-
-// Strict mode (default): reject invalid headers
-let codec = KdbCodec::with_options(false, CompressionMode::Auto, ValidationMode::Strict);
-
-// Using builder pattern
-let codec = KdbCodec::builder()
-    .validation_mode(ValidationMode::Lenient)
-    .build();
-```
-
-**Validation Modes:**
-- `Strict` (default): Validates that compressed flag is 0 or 1, and message type is 0, 1, or 2
-- `Lenient`: Accepts any header values (useful for debugging or handling non-standard implementations)
-
-### QStream - High-Level Client
-
-For a more convenient API, use `QStream` which wraps the codec:
-
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let mut stream = QStream::connect(
-        ConnectionMethod::TCP, 
-        "localhost", 
-        5000, 
-        "user:pass"
-    ).await?;
-    
-    // All operations are cancellation safe
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-    
-    Ok(())
-}
-```
-
-**With Explicit Options:**
-
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Using connect_with_options method
-    let mut stream = QStream::connect_with_options(
-        ConnectionMethod::TCP, 
-        "localhost", 
-        5000, 
-        "user:pass",
-        CompressionMode::Always,
-        ValidationMode::Lenient
-    ).await?;
-    
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-    
-    Ok(())
-}
-```
-
-**Using Builder Pattern (recommended):**
-
-```rust
-use kdb_codec::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Using builder pattern for cleaner API
-    let mut stream = QStream::builder()
-        .method(ConnectionMethod::TCP)
-        .host("localhost")
-        .port(5000)
-        .credential("user:pass")
-        .compression_mode(CompressionMode::Always)
-        .validation_mode(ValidationMode::Lenient)
-        .connect()
+    framed
+        .send(KdbMessage::new(qmsg_type::synchronous, query))
         .await?;
-    
-    let result = stream.send_sync_message(&"2+2").await?;
-    println!("Result: {}", result.get_int()?);
-    
+
+    if let Some(Ok(resp)) = framed.next().await {
+        println!("{}", resp.payload);
+    }
     Ok(())
 }
 ```
 
-**Tip:** For advanced use cases requiring separate send/receive channels, you can split the underlying Framed stream:
+## Datatype coverage (IPC)
 
-```rust
-let stream = TcpStream::connect("127.0.0.1:5000").await?;
-let framed = Framed::new(stream, KdbCodec::new(true));
-let (mut writer, mut reader) = framed.split();
+This project prioritizes safety when decoding untrusted IPC bytes (no panics, no OOM).
 
-// Use writer and reader independently
-tokio::spawn(async move {
-    while let Some(Ok(msg)) = reader.next().await {
-        println!("Received: {:?}", msg);
-    }
-});
-
-writer.send(msg).await?;
-```
-
-## Intuitive Data Access with Index Trait
-
-The library implements Rust's `Index` and `IndexMut` traits for ergonomic access to K object data using familiar `[]` syntax.
-
-### Dictionary Access
-
-Access dictionary keys and values directly using numeric indices:
-
-```rust
-use kdb_codec::*;
-
-// Create a dictionary using k! macro
-let dict = k!(dict: k!(sym: vec!["a", "b", "c"]) => k!(long: vec![10, 20, 30]));
-
-// Access keys and values using [] syntax
-let keys = &dict[0];    // Get dictionary keys
-let values = &dict[1];  // Get dictionary values
-
-println!("Keys: {}", keys);      // `a`b`c
-println!("Values: {}", values);  // 10 20 30
-
-// Mutable access
+- Supported: basic atoms/lists (0–19), mixed lists, table (98), dictionary (99/127), null (101), error (-128)
+- Not supported: enums (20–76), nested/other types (77+), function/derived types (100–112), foreign (112)
 let mut dict = k!(dict: k!(sym: vec!["x"]) => k!(long: vec![42]));
 dict[1] = k!(long: vec![100]);  // Replace values
 ```
