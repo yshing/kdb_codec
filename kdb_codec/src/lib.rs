@@ -103,6 +103,9 @@
 //!
 //! ## Type Mapping
 //!
+//! Note: This table reflects the types currently supported by this library's IPC encoder/decoder.
+//! Not every q/kdb+ datatype is supported yet (e.g., enums, foreign objects, and function/derived types).
+//!
 //! All types are expressed as `K` struct. The table below shows the input types of each q type:
 //!
 //! | q                | Rust                                              |

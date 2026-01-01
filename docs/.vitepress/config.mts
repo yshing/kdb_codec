@@ -42,6 +42,12 @@ export default defineConfig({
           { text: 'K Macro', link: '/guide/k-macro' },
           { text: 'Index Trait', link: '/guide/index-trait' },
         ]
+      },
+      {
+        text: 'Reference',
+        items: [
+          { text: 'Type Mapping & Coverage', link: '/guide/type-mapping' },
+        ]
       }
     ],
 

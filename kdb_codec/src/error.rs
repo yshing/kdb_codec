@@ -301,7 +301,9 @@ impl fmt::Display for Error {
                 "insufficient data: needed {} bytes but only {} available",
                 needed, available
             ),
-            Self::InvalidType(qtype) => write!(f, "invalid type byte: {}", qtype),
+            Self::InvalidType(qtype) => {
+                write!(f, "unsupported or invalid q type byte: {}", qtype)
+            }
             Self::MissingNullTerminator => write!(f, "missing null terminator in symbol or string"),
             Self::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
             Self::MaxDepthExceeded { depth, max } => write!(
@@ -377,7 +379,9 @@ impl fmt::Debug for Error {
                 "insufficient data: needed {} bytes but only {} available",
                 needed, available
             ),
-            Self::InvalidType(qtype) => write!(f, "invalid type byte: {}", qtype),
+            Self::InvalidType(qtype) => {
+                write!(f, "unsupported or invalid q type byte: {}", qtype)
+            }
             Self::MissingNullTerminator => write!(f, "missing null terminator in symbol or string"),
             Self::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
             Self::MaxDepthExceeded { depth, max } => write!(
