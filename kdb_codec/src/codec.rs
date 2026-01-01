@@ -398,8 +398,9 @@ impl Decoder for KdbCodec {
             payload_data.to_vec()
         };
 
-        // Deserialize the K object
-        let k_object = q_ipc_decode_sync(&decoded_payload, header.encoding);
+        // Deserialize the K object - now returns Result
+        let k_object = q_ipc_decode_sync(&decoded_payload, header.encoding)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         Ok(Some(KdbMessage {
             message_type: header.message_type,

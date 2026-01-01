@@ -26,9 +26,7 @@ fuzz_target!(|data: &[u8]| {
         
         let mut buffer = BytesMut::from(data);
         
-        // Catch panics
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _result = codec.decode(&mut buffer);
-        }));
+        // Now returns Result, no need to catch panics
+        let _ = codec.decode(&mut buffer);
     }
 });

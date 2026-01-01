@@ -31,7 +31,7 @@ pub const ENCODING: u8 = 1;
 impl K {
     /// Serialize q object to bytes in a manner of q function `-8!` without the IPC message
     ///  header (encoding, message type, compressed, reserved null byte and total message length).
-    pub(crate) fn q_ipc_encode(&self) -> Vec<u8> {
+    pub fn q_ipc_encode(&self) -> Vec<u8> {
         let mut stream = Vec::new();
         serialize_q(self, &mut stream);
         stream

@@ -12,6 +12,12 @@
 //! - **Type Safety**: Strong typing for kdb+ data types
 //! - **Multiple Connection Methods**: TCP, TLS, and Unix Domain Socket support
 //!
+//! ## Security Constants
+//!
+//! The library enforces limits to prevent attacks:
+//! - `MAX_LIST_SIZE`: 10 million elements
+//! - `MAX_RECURSION_DEPTH`: 100 levels
+//!
 //! ## Usage
 //!
 //! ### Basic Example
@@ -108,6 +114,16 @@
 //! - `QUDSPATH`: Optional path for Unix domain socket abstract namespace
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
+// >> Security Constants
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
+
+/// Maximum allowed list size during deserialization (10 million elements)
+pub const MAX_LIST_SIZE: usize = 10_000_000;
+
+/// Maximum recursion depth for nested structures
+pub const MAX_RECURSION_DEPTH: usize = 100;
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++//
 // >> Module Declarations
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
 
@@ -121,7 +137,7 @@ mod qnull_inf;
 mod types;
 
 // IPC modules
-mod codec;
+pub mod codec;
 mod connection;
 mod deserialize_sync;
 mod format;

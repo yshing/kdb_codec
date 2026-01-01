@@ -15,10 +15,8 @@ fuzz_target!(|data: &[u8]| {
     }
     
     // Test with both encodings
+    // Now returns Result, so we just ignore errors
     for encoding in [0u8, 1u8] {
-        // Catch panics to prevent fuzzer from stopping
-        let _ = std::panic::catch_unwind(|| {
-            let _result = K::q_ipc_decode(data, encoding);
-        });
+        let _ = K::q_ipc_decode(data, encoding);
     }
 });
