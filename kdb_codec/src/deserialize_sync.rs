@@ -23,9 +23,12 @@ macro_rules! build_element {
                 available: $bytes.len().saturating_sub($cursor),
             });
         }
+        let element_bytes: [u8; 2] = $bytes[$cursor..$cursor + 2]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid i16 bytes".to_string()))?;
         let element = match $encode {
-            0 => i16::from_be_bytes($bytes[$cursor..$cursor + 2].try_into().unwrap()),
-            _ => i16::from_le_bytes($bytes[$cursor..$cursor + 2].try_into().unwrap()),
+            0 => i16::from_be_bytes(element_bytes),
+            _ => i16::from_le_bytes(element_bytes),
         };
         Ok((
             K::new($qtype, qattribute::NONE, k0_inner::short(element)),
@@ -39,9 +42,12 @@ macro_rules! build_element {
                 available: $bytes.len().saturating_sub($cursor),
             });
         }
+        let element_bytes: [u8; 4] = $bytes[$cursor..$cursor + 4]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid i32 bytes".to_string()))?;
         let element = match $encode {
-            0 => i32::from_be_bytes($bytes[$cursor..$cursor + 4].try_into().unwrap()),
-            _ => i32::from_le_bytes($bytes[$cursor..$cursor + 4].try_into().unwrap()),
+            0 => i32::from_be_bytes(element_bytes),
+            _ => i32::from_le_bytes(element_bytes),
         };
         Ok((
             K::new($qtype, qattribute::NONE, k0_inner::int(element)),
@@ -55,9 +61,12 @@ macro_rules! build_element {
                 available: $bytes.len().saturating_sub($cursor),
             });
         }
+        let element_bytes: [u8; 8] = $bytes[$cursor..$cursor + 8]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid i64 bytes".to_string()))?;
         let element = match $encode {
-            0 => i64::from_be_bytes($bytes[$cursor..$cursor + 8].try_into().unwrap()),
-            _ => i64::from_le_bytes($bytes[$cursor..$cursor + 8].try_into().unwrap()),
+            0 => i64::from_be_bytes(element_bytes),
+            _ => i64::from_le_bytes(element_bytes),
         };
         Ok((
             K::new($qtype, qattribute::NONE, k0_inner::long(element)),
@@ -71,9 +80,12 @@ macro_rules! build_element {
                 available: $bytes.len().saturating_sub($cursor),
             });
         }
+        let element_bytes: [u8; 4] = $bytes[$cursor..$cursor + 4]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid f32 bytes".to_string()))?;
         let element = match $encode {
-            0 => f32::from_be_bytes($bytes[$cursor..$cursor + 4].try_into().unwrap()),
-            _ => f32::from_le_bytes($bytes[$cursor..$cursor + 4].try_into().unwrap()),
+            0 => f32::from_be_bytes(element_bytes),
+            _ => f32::from_le_bytes(element_bytes),
         };
         Ok((
             K::new($qtype, qattribute::NONE, k0_inner::real(element)),
@@ -87,9 +99,12 @@ macro_rules! build_element {
                 available: $bytes.len().saturating_sub($cursor),
             });
         }
+        let element_bytes: [u8; 8] = $bytes[$cursor..$cursor + 8]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid f64 bytes".to_string()))?;
         let element = match $encode {
-            0 => f64::from_be_bytes($bytes[$cursor..$cursor + 8].try_into().unwrap()),
-            _ => f64::from_le_bytes($bytes[$cursor..$cursor + 8].try_into().unwrap()),
+            0 => f64::from_be_bytes(element_bytes),
+            _ => f64::from_le_bytes(element_bytes),
         };
         Ok((
             K::new($qtype, qattribute::NONE, k0_inner::float(element)),
@@ -110,16 +125,38 @@ macro_rules! build_list {
                 available: $bytes.len().saturating_sub(cursor),
             });
         }
-        let list = match $encode {
-            0 => $bytes[cursor..cursor + byte_count]
-                .chunks(2)
-                .map(|element| i16::from_be_bytes(element.try_into().unwrap()))
-                .collect::<Vec<H>>(),
-            _ => $bytes[cursor..cursor + byte_count]
-                .chunks(2)
-                .map(|element| i16::from_le_bytes(element.try_into().unwrap()))
-                .collect::<Vec<H>>(),
-        };
+        let slice = &$bytes[cursor..cursor + byte_count];
+        let mut list: Vec<H> = Vec::with_capacity(size);
+        match $encode {
+            0 => {
+                let mut iter = slice.chunks_exact(2);
+                for element in &mut iter {
+                    let element_bytes: [u8; 2] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i16 list bytes".to_string())
+                    })?;
+                    list.push(i16::from_be_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i16 list alignment".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                let mut iter = slice.chunks_exact(2);
+                for element in &mut iter {
+                    let element_bytes: [u8; 2] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i16 list bytes".to_string())
+                    })?;
+                    list.push(i16::from_le_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i16 list alignment".to_string(),
+                    ));
+                }
+            }
+        }
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
@@ -133,16 +170,38 @@ macro_rules! build_list {
                 available: $bytes.len().saturating_sub(cursor),
             });
         }
-        let list = match $encode {
-            0 => $bytes[cursor..cursor + byte_count]
-                .chunks(4)
-                .map(|element| i32::from_be_bytes(element.try_into().unwrap()))
-                .collect::<Vec<I>>(),
-            _ => $bytes[cursor..cursor + byte_count]
-                .chunks(4)
-                .map(|element| i32::from_le_bytes(element.try_into().unwrap()))
-                .collect::<Vec<I>>(),
-        };
+        let slice = &$bytes[cursor..cursor + byte_count];
+        let mut list: Vec<I> = Vec::with_capacity(size);
+        match $encode {
+            0 => {
+                let mut iter = slice.chunks_exact(4);
+                for element in &mut iter {
+                    let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i32 list bytes".to_string())
+                    })?;
+                    list.push(i32::from_be_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i32 list alignment".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                let mut iter = slice.chunks_exact(4);
+                for element in &mut iter {
+                    let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i32 list bytes".to_string())
+                    })?;
+                    list.push(i32::from_le_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i32 list alignment".to_string(),
+                    ));
+                }
+            }
+        }
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
@@ -156,16 +215,38 @@ macro_rules! build_list {
                 available: $bytes.len().saturating_sub(cursor),
             });
         }
-        let list = match $encode {
-            0 => $bytes[cursor..cursor + byte_count]
-                .chunks(8)
-                .map(|element| i64::from_be_bytes(element.try_into().unwrap()))
-                .collect::<Vec<J>>(),
-            _ => $bytes[cursor..cursor + byte_count]
-                .chunks(8)
-                .map(|element| i64::from_le_bytes(element.try_into().unwrap()))
-                .collect::<Vec<J>>(),
-        };
+        let slice = &$bytes[cursor..cursor + byte_count];
+        let mut list: Vec<J> = Vec::with_capacity(size);
+        match $encode {
+            0 => {
+                let mut iter = slice.chunks_exact(8);
+                for element in &mut iter {
+                    let element_bytes: [u8; 8] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i64 list bytes".to_string())
+                    })?;
+                    list.push(i64::from_be_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i64 list alignment".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                let mut iter = slice.chunks_exact(8);
+                for element in &mut iter {
+                    let element_bytes: [u8; 8] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid i64 list bytes".to_string())
+                    })?;
+                    list.push(i64::from_le_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid i64 list alignment".to_string(),
+                    ));
+                }
+            }
+        }
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
@@ -179,16 +260,38 @@ macro_rules! build_list {
                 available: $bytes.len().saturating_sub(cursor),
             });
         }
-        let list = match $encode {
-            0 => $bytes[cursor..cursor + byte_count]
-                .chunks(4)
-                .map(|element| f32::from_be_bytes(element.try_into().unwrap()))
-                .collect::<Vec<E>>(),
-            _ => $bytes[cursor..cursor + byte_count]
-                .chunks(4)
-                .map(|element| f32::from_le_bytes(element.try_into().unwrap()))
-                .collect::<Vec<E>>(),
-        };
+        let slice = &$bytes[cursor..cursor + byte_count];
+        let mut list: Vec<E> = Vec::with_capacity(size);
+        match $encode {
+            0 => {
+                let mut iter = slice.chunks_exact(4);
+                for element in &mut iter {
+                    let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid f32 list bytes".to_string())
+                    })?;
+                    list.push(f32::from_be_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid f32 list alignment".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                let mut iter = slice.chunks_exact(4);
+                for element in &mut iter {
+                    let element_bytes: [u8; 4] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid f32 list bytes".to_string())
+                    })?;
+                    list.push(f32::from_le_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid f32 list alignment".to_string(),
+                    ));
+                }
+            }
+        }
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
@@ -202,16 +305,38 @@ macro_rules! build_list {
                 available: $bytes.len().saturating_sub(cursor),
             });
         }
-        let list = match $encode {
-            0 => $bytes[cursor..cursor + byte_count]
-                .chunks(8)
-                .map(|element| f64::from_be_bytes(element.try_into().unwrap()))
-                .collect::<Vec<F>>(),
-            _ => $bytes[cursor..cursor + byte_count]
-                .chunks(8)
-                .map(|element| f64::from_le_bytes(element.try_into().unwrap()))
-                .collect::<Vec<F>>(),
-        };
+        let slice = &$bytes[cursor..cursor + byte_count];
+        let mut list: Vec<F> = Vec::with_capacity(size);
+        match $encode {
+            0 => {
+                let mut iter = slice.chunks_exact(8);
+                for element in &mut iter {
+                    let element_bytes: [u8; 8] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid f64 list bytes".to_string())
+                    })?;
+                    list.push(f64::from_be_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid f64 list alignment".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                let mut iter = slice.chunks_exact(8);
+                for element in &mut iter {
+                    let element_bytes: [u8; 8] = element.try_into().map_err(|_| {
+                        Error::DeserializationError("invalid f64 list bytes".to_string())
+                    })?;
+                    list.push(f64::from_le_bytes(element_bytes));
+                }
+                if !iter.remainder().is_empty() {
+                    return Err(Error::DeserializationError(
+                        "invalid f64 list alignment".to_string(),
+                    ));
+                }
+            }
+        }
         let k = K::new($qtype, attribute, k0_inner::list(k0_list::new(list)));
         Ok((k, cursor + byte_count))
     }};
@@ -454,10 +579,10 @@ fn deserialize_guid(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
             available: bytes.len().saturating_sub(cursor),
         });
     }
-    Ok((
-        K::new_guid(bytes[cursor..cursor + 16].try_into().unwrap()),
-        cursor + 16,
-    ))
+    let guid: [u8; 16] = bytes[cursor..cursor + 16]
+        .try_into()
+        .map_err(|_| Error::DeserializationError("invalid guid bytes".to_string()))?;
+    Ok((K::new_guid(guid), cursor + 16))
 }
 
 fn deserialize_byte(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
@@ -519,9 +644,12 @@ fn get_attribute_and_size(
         });
     }
 
+    let size_bytes: [u8; 4] = bytes[cursor + 1..cursor + 5]
+        .try_into()
+        .map_err(|_| Error::DeserializationError("invalid list size bytes".to_string()))?;
     let size_u32 = match encode {
-        0 => u32::from_be_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
-        _ => u32::from_le_bytes(bytes[cursor + 1..cursor + 5].try_into().unwrap()),
+        0 => u32::from_be_bytes(size_bytes),
+        _ => u32::from_le_bytes(size_bytes),
     };
 
     let size = size_u32 as usize;
@@ -575,10 +703,20 @@ fn deserialize_guid_list_sync(
             available: bytes.len().saturating_sub(cursor),
         });
     }
-    let list = bytes[cursor..cursor + byte_count]
-        .chunks(16)
-        .map(|guid| guid.try_into().unwrap())
-        .collect::<Vec<U>>();
+    let slice = &bytes[cursor..cursor + byte_count];
+    let mut list: Vec<U> = Vec::with_capacity(size);
+    let mut iter = slice.chunks_exact(16);
+    for guid_bytes in &mut iter {
+        let guid: [u8; 16] = guid_bytes
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid guid list bytes".to_string()))?;
+        list.push(guid);
+    }
+    if !iter.remainder().is_empty() {
+        return Err(Error::DeserializationError(
+            "invalid guid list alignment".to_string(),
+        ));
+    }
     Ok((K::new_guid_list(list, attribute), cursor + byte_count))
 }
 
@@ -635,6 +773,15 @@ fn deserialize_symbol_list_sync(
 ) -> Result<(K, usize)> {
     let (attribute, size, mut cursor) =
         get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
+    // Each symbol requires at least 1 byte (null terminator). If the input can't possibly
+    // contain `size` symbols, fail early before attempting large allocations.
+    let remaining = bytes.len().saturating_sub(cursor);
+    if size > remaining {
+        return Err(Error::InsufficientData {
+            needed: size,
+            available: remaining,
+        });
+    }
     let mut list = Vec::with_capacity(size);
     for _ in 0..size {
         if cursor >= bytes.len() {
@@ -674,6 +821,15 @@ fn deserialize_compound_list_sync(
 
     let (attribute, size, mut cursor) =
         get_attribute_and_size(bytes, cursor, encode, max_list_size)?;
+    // Each nested element requires at least 1 byte (its qtype). If the input can't possibly
+    // contain `size` elements, fail early before attempting large allocations.
+    let remaining = bytes.len().saturating_sub(cursor);
+    if size > remaining {
+        return Err(Error::InsufficientData {
+            needed: size,
+            available: remaining,
+        });
+    }
     let mut list = Vec::with_capacity(size);
     for _ in 0..size {
         let (k, new_cursor) = deserialize_bytes_sync(
