@@ -56,6 +56,22 @@ pub enum Error {
     PopFromEmptyList,
     /// Tried to convert but coluld not.
     Object(K),
+    /// Deserialization error with custom message.
+    DeserializationError(String),
+    /// Buffer too small for the requested operation.
+    InsufficientData { needed: usize, available: usize },
+    /// Invalid type byte encountered during deserialization.
+    InvalidType(i8),
+    /// Missing null terminator in symbol or string data.
+    MissingNullTerminator,
+    /// Invalid UTF-8 sequence in string data.
+    InvalidUtf8,
+    /// Maximum recursion depth exceeded during deserialization.
+    MaxDepthExceeded { depth: usize, max: usize },
+    /// List size exceeds maximum allowed size.
+    ListTooLarge { size: usize, max: usize },
+    /// Integer overflow in size calculation.
+    SizeOverflow,
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
@@ -279,6 +295,26 @@ impl fmt::Display for Error {
             }
             Self::Object(object) => write!(f, "{}", object),
             Self::PopFromEmptyList => write!(f, "pop from empty list"),
+            Self::DeserializationError(msg) => write!(f, "deserialization error: {}", msg),
+            Self::InsufficientData { needed, available } => write!(
+                f,
+                "insufficient data: needed {} bytes but only {} available",
+                needed, available
+            ),
+            Self::InvalidType(qtype) => write!(f, "invalid type byte: {}", qtype),
+            Self::MissingNullTerminator => write!(f, "missing null terminator in symbol or string"),
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
+            Self::MaxDepthExceeded { depth, max } => write!(
+                f,
+                "maximum recursion depth exceeded: {} (max: {})",
+                depth, max
+            ),
+            Self::ListTooLarge { size, max } => write!(
+                f,
+                "list size {} exceeds maximum allowed size {}",
+                size, max
+            ),
+            Self::SizeOverflow => write!(f, "integer overflow in size calculation"),
         }
     }
 }
@@ -337,6 +373,26 @@ impl fmt::Debug for Error {
             }
             Self::Object(object) => write!(f, "{}", object),
             Self::PopFromEmptyList => write!(f, "pop from empty list"),
+            Self::DeserializationError(msg) => write!(f, "deserialization error: {}", msg),
+            Self::InsufficientData { needed, available } => write!(
+                f,
+                "insufficient data: needed {} bytes but only {} available",
+                needed, available
+            ),
+            Self::InvalidType(qtype) => write!(f, "invalid type byte: {}", qtype),
+            Self::MissingNullTerminator => write!(f, "missing null terminator in symbol or string"),
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
+            Self::MaxDepthExceeded { depth, max } => write!(
+                f,
+                "maximum recursion depth exceeded: {} (max: {})",
+                depth, max
+            ),
+            Self::ListTooLarge { size, max } => write!(
+                f,
+                "list size {} exceeds maximum allowed size {}",
+                size, max
+            ),
+            Self::SizeOverflow => write!(f, "integer overflow in size calculation"),
         }
     }
 }

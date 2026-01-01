@@ -1,0 +1,36 @@
+[package]
+name = "kdb_codec-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.kdb_codec]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_q_ipc_decode"
+path = "fuzz_targets/fuzz_q_ipc_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_decompress"
+path = "fuzz_targets/fuzz_decompress.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_codec_decode"
+path = "fuzz_targets/fuzz_codec_decode.rs"
+test = false
+doc = false
