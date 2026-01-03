@@ -98,6 +98,8 @@ pub mod qtype {
     pub const DICTIONARY: c_schar = 99;
     /// Type indicator of q general null
     pub const NULL: c_schar = 101;
+    /// Type indicator of q lambda function.
+    pub const LAMBDA: c_schar = 100;
     /// Type indicator of q foreign object.
     pub const FOREIGN: c_schar = 112;
     /// Type indicator of q sorted dictionary. Slice access type: `K`, i.e., `obj.as_mut_sice::<K>()`.

@@ -110,6 +110,8 @@ pub(crate) enum k0_inner {
     list(k0_list),
     /// Null type holder.
     null(()),
+    /// Lambda function type holder.
+    lambda { context: S, body: S },
 }
 
 //%% k0 %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
@@ -490,6 +492,18 @@ impl K {
             qtype::SYMBOL_ATOM,
             qattribute::NONE,
             k0_inner::symbol(symbol),
+        )
+    }
+
+    /// Construct q lambda function.
+    ///
+    /// The `context` is serialized as a null-terminated string immediately after the type byte.
+    /// The `body` is serialized as a char vector (type 10).
+    pub fn new_lambda(context: String, body: String) -> Self {
+        K::new(
+            qtype::LAMBDA,
+            qattribute::NONE,
+            k0_inner::lambda { context, body },
         )
     }
 
@@ -1872,6 +1886,19 @@ impl K {
                 )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::STRING)),
+        }
+    }
+
+    /// Get the underlying lambda parts `(context, body)`.
+    pub fn as_lambda(&self) -> Result<(&str, &str)> {
+        match self.0.qtype {
+            qtype::LAMBDA => match &self.0.value {
+                k0_inner::lambda { context, body } => Ok((context.as_str(), body.as_str())),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for LAMBDA".to_string(),
+                )),
+            },
+            _ => Err(Error::invalid_cast(self.0.qtype, qtype::LAMBDA)),
         }
     }
 

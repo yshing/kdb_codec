@@ -78,9 +78,33 @@ fn serialize_q(obj: &K, stream: &mut Vec<u8>) {
         qtype::SYMBOL_LIST => serialize_symbol_list(obj, stream),
         qtype::TABLE => serialize_table(obj, stream),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => serialize_dictionary(obj, stream),
+        qtype::LAMBDA => serialize_lambda(obj, stream),
         qtype::NULL => serialize_null(stream),
         _ => unimplemented!(),
     };
+}
+
+fn serialize_lambda(lambda: &K, stream: &mut Vec<u8>) {
+    let (context, body) = lambda.as_lambda().unwrap();
+
+    // Type
+    stream.push(qtype::LAMBDA as u8);
+
+    // Context: null terminated string ("" for root)
+    stream.extend_from_slice(context.as_bytes());
+    stream.push(0x00);
+
+    // Body: char vector (type 10)
+    stream.push(qtype::STRING as u8);
+    stream.push(qattribute::NONE as u8);
+
+    let bytes = body.as_bytes();
+    let length = match ENCODING {
+        0 => (bytes.len() as u32).to_be_bytes(),
+        _ => (bytes.len() as u32).to_le_bytes(),
+    };
+    stream.extend_from_slice(&length);
+    stream.extend_from_slice(bytes);
 }
 
 fn serialize_guid(guid: &K, stream: &mut Vec<u8>) {

@@ -556,10 +556,68 @@ fn deserialize_bytes_sync(
             max_list_size,
             max_recursion_depth,
         ),
+        qtype::LAMBDA => deserialize_lambda_sync(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+        ),
         qtype::NULL => deserialize_null(bytes, cursor + 1, encode),
         qtype::ERROR => deserialize_error(bytes, cursor + 1, encode),
         _ => Err(Error::InvalidType(qtype)),
     }
+}
+
+fn deserialize_lambda_sync(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
+    // Context: null-terminated string
+    if cursor >= bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 1,
+            available: 0,
+        });
+    }
+
+    let mut idx = cursor;
+    while idx < bytes.len() && bytes[idx] != 0x00 {
+        idx += 1;
+    }
+    if idx >= bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 1,
+            available: 0,
+        });
+    }
+
+    let context = String::from_utf8_lossy(&bytes[cursor..idx]).to_string();
+    idx += 1; // skip null terminator
+
+    // Body: a char vector (type 10)
+    let (body_k, next_cursor) = deserialize_bytes_sync(
+        bytes,
+        idx,
+        encode,
+        depth + 1,
+        max_list_size,
+        max_recursion_depth,
+    )?;
+
+    if body_k.get_type() != qtype::STRING {
+        return Err(Error::DeserializationError(
+            "invalid lambda body (expected char vector)".to_string(),
+        ));
+    }
+    let body = body_k.as_string()?.to_string();
+
+    Ok((K::new_lambda(context, body), next_cursor))
 }
 
 fn deserialize_bool(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
@@ -872,8 +930,8 @@ fn deserialize_table_sync(
         });
     }
 
-    // Skip attribute byte
-    let _attribute = bytes[cursor] as i8;
+    // Read table attribute byte (e.g. `s#`)
+    let attribute = bytes[cursor] as i8;
     // Skip dictionary qtype byte (should be 99 or 127)
     let _dict_qtype = bytes[cursor + 1] as i8;
     let cursor = cursor + 2;
@@ -888,7 +946,7 @@ fn deserialize_table_sync(
         max_recursion_depth,
     )?;
     Ok((
-        K::new(qtype::TABLE, qattribute::NONE, k0_inner::table(dictionary)),
+        K::new(qtype::TABLE, attribute, k0_inner::table(dictionary)),
         cursor,
     ))
 }

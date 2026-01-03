@@ -17,6 +17,16 @@ assertEq:{[name; sent; recv]
   ::
  };
 
+assertIpcEq:{[name; sent; recv]
+  if[not (-8!sent) ~ -8!recv;
+    -2 "assert failed: ", name;
+    -2 "  sent(-8!): ", -3!(-8!sent);
+    -2 "  recv(-8!): ", -3!(-8!recv);
+    '"assertion failed";
+  ];
+  ::
+ };
+
 run:{
   host:getenv `KDBCODEC_E2E_HOST;
   port:"I"$getenv `KDBCODEC_E2E_PORT;
@@ -87,6 +97,8 @@ run:{
   assertEq["real list"; 30.2 5.002e; send[h; 30.2 5.002e]];
   assertEq["float list"; 100.23 0.4268 15.882; send[h; 100.23 0.4268 15.882]];
   assertEq["symbol list"; `a`b`c; send[h; `a`b`c]];
+  / attribute-bearing list
+  assertEq["sorted int list"; `s#1 2 3i; send[h; `s#1 2 3i]];
 
   / ---- Compound list ----
   assertEq["compound list"; (`alpha; 42i; "bravo"; 1.25); send[h; (`alpha; 42i; "bravo"; 1.25)]];
@@ -98,6 +110,15 @@ run:{
   assertEq["table"; ([] a:10 20 30i; b:`honey`sugar`maple; c:001b); send[h; ([] a:10 20 30i; b:`honey`sugar`maple; c:001b)]];
   / table with attribute
   assertEq["sorted table"; `s#([] a:10 20 30i; b:`honey`sugar`maple; c:001b); send[h; `s#([] a:10 20 30i; b:`honey`sugar`maple; c:001b)]];
+
+  / ---- Keyed table ----
+  assertEq["keyed table"; ([a:10 20i] b:100 200i); send[h; ([a:10 20i] b:100 200i)]];
+
+  / ---- Functions ----
+  f:{x+y};
+  assertIpcEq["lambda root"; f; send[h; f]];
+  .d.g:{x+y};
+  assertIpcEq["lambda non-root context"; .d.g; send[h; .d.g]];
 
   hclose h;
   -1 "ok";

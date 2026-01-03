@@ -897,6 +897,10 @@ fn put_q(object: &K, stream: &mut String, precision: usize) {
             put_attribute(object.0.attribute, stream);
             put_time_list(object.as_vec::<I>().unwrap(), stream)
         }
+        qtype::LAMBDA => {
+            let (_context, body) = object.as_lambda().unwrap();
+            stream.push_str(body);
+        }
         qtype::TABLE => put_table(object, stream, precision),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => put_dictionary(object, stream, precision),
         qtype::NULL => stream.push_str("::"),
