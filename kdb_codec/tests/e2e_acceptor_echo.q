@@ -128,6 +128,17 @@ run:{
   assertIpcEq["projection (1+)"; (1+); send[h; (1+)]];
   assertIpcEq["projection (+[;2])"; (+[;2]); send[h; (+[;2])]];
 
+  / derived functions (roundtrip by IPC bytes)
+  assertIpcEq["derived over (+/)"; (+/); send[h; (+/)]];
+  assertIpcEq["derived scan (+\\)"; (+\\); send[h; (+\\)]];
+ 
+   // derived/adverbs (roundtrip-only)
+   assertIpcEq["derived each (neg')"; (neg'); send[h; (neg')]];
+   assertIpcEq["derived each (+')"; (+'); send[h; (+')]];
+   assertIpcEq["derived each-prior (+':)"; (+':); send[h; (+':)]];
+   assertIpcEq["derived each-left (+/:)"; (+/:); send[h; (+/:)]];
+   assertIpcEq["derived each-right (+\\:)"; (+\\:); send[h; (+\\:)]];
+
   hclose h;
   -1 "ok";
   ::

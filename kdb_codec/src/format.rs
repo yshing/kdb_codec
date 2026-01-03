@@ -919,6 +919,8 @@ fn put_q(object: &K, stream: &mut String, precision: usize) {
         },
         qtype::BINARY_PRIMITIVE => stream.push_str("<binary primitive>"),
         qtype::PROJECTION => stream.push_str("<projection>"),
+        qtype::OVER => stream.push_str("<over>"),
+        qtype::SCAN => stream.push_str("<scan>"),
         _ => unimplemented!(),
     }
 }

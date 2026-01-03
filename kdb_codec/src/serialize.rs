@@ -82,6 +82,12 @@ fn serialize_q(obj: &K, stream: &mut Vec<u8>) {
         qtype::UNARY_PRIMITIVE => serialize_unary_primitive_or_null(obj, stream),
         qtype::BINARY_PRIMITIVE => serialize_opaque_payload_type(obj, stream),
         qtype::PROJECTION => serialize_opaque_payload_type(obj, stream),
+        qtype::EACH => serialize_opaque_payload_type(obj, stream),
+        qtype::OVER => serialize_opaque_payload_type(obj, stream),
+        qtype::SCAN => serialize_opaque_payload_type(obj, stream),
+        qtype::EACH_PRIOR => serialize_opaque_payload_type(obj, stream),
+        qtype::EACH_LEFT => serialize_opaque_payload_type(obj, stream),
+        qtype::EACH_RIGHT => serialize_opaque_payload_type(obj, stream),
         _ => unimplemented!(),
     };
 }

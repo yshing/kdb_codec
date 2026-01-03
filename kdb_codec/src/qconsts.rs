@@ -113,6 +113,18 @@ pub mod qtype {
     pub const BINARY_PRIMITIVE: c_schar = 102;
     /// Type indicator of q projection.
     pub const PROJECTION: c_schar = 104;
+    /// Type indicator of q derived function: over (e.g. `+/`).
+    pub const OVER: c_schar = 107;
+    /// Type indicator of q derived function: scan (e.g. `+\\`).
+    pub const SCAN: c_schar = 108;
+    /// Type indicator of q derived function: each (e.g. `neg'`).
+    pub const EACH: c_schar = 106;
+    /// Type indicator of q derived function: each-prior (e.g. `+':`).
+    pub const EACH_PRIOR: c_schar = 109;
+    /// Type indicator of q derived function: each-left (e.g. `+/:`).
+    pub const EACH_LEFT: c_schar = 110;
+    /// Type indicator of q derived function: each-right (e.g. `+\\:`).
+    pub const EACH_RIGHT: c_schar = 111;
     /// Type indicator of q foreign object.
     pub const FOREIGN: c_schar = 112;
     /// Type indicator of q sorted dictionary. Slice access type: `K`, i.e., `obj.as_mut_sice::<K>()`.
