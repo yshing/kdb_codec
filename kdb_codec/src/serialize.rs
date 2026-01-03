@@ -381,7 +381,9 @@ fn serialize_compound_list(list: &K, stream: &mut Vec<u8>) {
 fn serialize_table(table: &K, stream: &mut Vec<u8>) {
     // Type
     stream.push(0x62);
-    stream.push(0);
+    // Attribute (e.g. `s#` for sorted table)
+    stream.push(table.0.attribute as u8);
+    // Dictionary qtype marker (99)
     stream.push(0x63);
     // Retrieve underying dictionary
     let vector = table.get_dictionary().unwrap().as_vec::<K>().unwrap();

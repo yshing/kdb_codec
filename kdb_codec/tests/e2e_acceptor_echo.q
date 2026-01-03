@@ -96,6 +96,8 @@ run:{
 
   / ---- Table ----
   assertEq["table"; ([] a:10 20 30i; b:`honey`sugar`maple; c:001b); send[h; ([] a:10 20 30i; b:`honey`sugar`maple; c:001b)]];
+  / table with attribute
+  assertEq["sorted table"; `s#([] a:10 20 30i; b:`honey`sugar`maple; c:001b); send[h; `s#([] a:10 20 30i; b:`honey`sugar`maple; c:001b)]];
 
   hclose h;
   -1 "ok";
