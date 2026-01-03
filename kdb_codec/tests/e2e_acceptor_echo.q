@@ -120,6 +120,14 @@ run:{
   .d.g:{x+y};
   assertIpcEq["lambda non-root context"; .d.g; send[h; .d.g]];
 
+  / primitive functions (roundtrip by IPC bytes)
+  assertIpcEq["unary primitive neg"; value "neg"; send[h; value "neg"]];
+  assertIpcEq["binary primitive +"; value "+"; send[h; value "+"]];
+
+  / projections (roundtrip by IPC bytes)
+  assertIpcEq["projection (1+)"; (1+); send[h; (1+)]];
+  assertIpcEq["projection (+[;2])"; (+[;2]); send[h; (+[;2])]];
+
   hclose h;
   -1 "ok";
   ::

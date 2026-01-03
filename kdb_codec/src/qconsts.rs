@@ -96,10 +96,23 @@ pub mod qtype {
     /// - `obj.as_mut_sice::<K>()[0]`: keys
     /// - `obj.as_mut_sice::<K>()[1]`: values
     pub const DICTIONARY: c_schar = 99;
-    /// Type indicator of q general null
+    /// Type indicator of q general null.
+    ///
+    /// # Note
+    /// On the wire, `(::)` is encoded as a unary-primitive function (type 101)
+    /// with a single-byte id payload of `0x00`.
     pub const NULL: c_schar = 101;
     /// Type indicator of q lambda function.
     pub const LAMBDA: c_schar = 100;
+    /// Type indicator of q unary primitive function.
+    ///
+    /// This is an alias of [`NULL`]. In IPC, both use the same type byte (101);
+    /// the distinction is in the payload (id 0 => `(::)`; otherwise a unary primitive).
+    pub const UNARY_PRIMITIVE: c_schar = NULL;
+    /// Type indicator of q binary primitive function.
+    pub const BINARY_PRIMITIVE: c_schar = 102;
+    /// Type indicator of q projection.
+    pub const PROJECTION: c_schar = 104;
     /// Type indicator of q foreign object.
     pub const FOREIGN: c_schar = 112;
     /// Type indicator of q sorted dictionary. Slice access type: `K`, i.e., `obj.as_mut_sice::<K>()`.

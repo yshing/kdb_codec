@@ -79,9 +79,45 @@ fn serialize_q(obj: &K, stream: &mut Vec<u8>) {
         qtype::TABLE => serialize_table(obj, stream),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => serialize_dictionary(obj, stream),
         qtype::LAMBDA => serialize_lambda(obj, stream),
-        qtype::NULL => serialize_null(stream),
+        qtype::UNARY_PRIMITIVE => serialize_unary_primitive_or_null(obj, stream),
+        qtype::BINARY_PRIMITIVE => serialize_opaque_payload_type(obj, stream),
+        qtype::PROJECTION => serialize_opaque_payload_type(obj, stream),
         _ => unimplemented!(),
     };
+}
+
+fn serialize_unary_primitive_or_null(obj: &K, stream: &mut Vec<u8>) {
+    // Type
+    stream.push(qtype::UNARY_PRIMITIVE as u8);
+
+    // Data
+    match &obj.0.value {
+        k0_inner::null(()) => {
+            // (::) encodes as unary primitive id 0
+            stream.push(0x00);
+        }
+        k0_inner::opaque(payload) => {
+            stream.extend_from_slice(payload);
+        }
+        _ => {
+            // Preserve historical behavior: treat qtype 101 as null if caller constructed it
+            // without the opaque payload.
+            stream.push(0x00);
+        }
+    }
+}
+
+fn serialize_opaque_payload_type(obj: &K, stream: &mut Vec<u8>) {
+    // Type
+    stream.push(obj.0.qtype as u8);
+
+    // Data
+    if let k0_inner::opaque(payload) = &obj.0.value {
+        stream.extend_from_slice(payload);
+    } else {
+        // No payload stored; encode as just the type byte.
+        // This is roundtrip-unsafe but avoids panicking.
+    }
 }
 
 fn serialize_lambda(lambda: &K, stream: &mut Vec<u8>) {
@@ -429,8 +465,7 @@ fn serialize_dictionary(dictionary: &K, stream: &mut Vec<u8>) {
 }
 
 fn serialize_null(stream: &mut Vec<u8>) {
-    // Type
+    // Backwards-compatible helper for historical callers.
     stream.push(0x65);
-    // Data
     stream.push(0x00);
 }

@@ -903,7 +903,22 @@ fn put_q(object: &K, stream: &mut String, precision: usize) {
         }
         qtype::TABLE => put_table(object, stream, precision),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => put_dictionary(object, stream, precision),
-        qtype::NULL => stream.push_str("::"),
+        qtype::UNARY_PRIMITIVE => match &object.0.value {
+            k0_inner::null(()) => stream.push_str("::"),
+            k0_inner::opaque(payload) => {
+                // Roundtrip-only display. The id mapping is internal to q.
+                stream.push_str("<unary primitive ");
+                if let Some(id) = payload.first() {
+                    stream.push_str(&format!("0x{:02x}", id));
+                } else {
+                    stream.push_str("<missing id>");
+                }
+                stream.push('>');
+            }
+            _ => stream.push_str("::"),
+        },
+        qtype::BINARY_PRIMITIVE => stream.push_str("<binary primitive>"),
+        qtype::PROJECTION => stream.push_str("<projection>"),
         _ => unimplemented!(),
     }
 }

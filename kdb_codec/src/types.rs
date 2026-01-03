@@ -112,6 +112,10 @@ pub(crate) enum k0_inner {
     null(()),
     /// Lambda function type holder.
     lambda { context: S, body: S },
+    /// Opaque IPC payload holder (bytes after the type byte).
+    ///
+    /// Used for roundtrip-only support of types where we don't yet have a rich Rust representation.
+    opaque(Vec<u8>),
 }
 
 //%% k0 %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/

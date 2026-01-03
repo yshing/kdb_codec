@@ -564,10 +564,128 @@ fn deserialize_bytes_sync(
             max_list_size,
             max_recursion_depth,
         ),
-        qtype::NULL => deserialize_null(bytes, cursor + 1, encode),
+        qtype::UNARY_PRIMITIVE => deserialize_unary_primitive_or_null(bytes, cursor + 1, encode),
+        qtype::BINARY_PRIMITIVE => deserialize_fixed_payload_opaque(
+            bytes,
+            cursor + 1,
+            encode,
+            qtype::BINARY_PRIMITIVE,
+            1,
+        ),
+        qtype::PROJECTION => deserialize_projection_opaque(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+        ),
         qtype::ERROR => deserialize_error(bytes, cursor + 1, encode),
         _ => Err(Error::InvalidType(qtype)),
     }
+}
+
+fn deserialize_fixed_payload_opaque(
+    bytes: &[u8],
+    cursor: usize,
+    _: u8,
+    qtype: i8,
+    payload_len: usize,
+) -> Result<(K, usize)> {
+    if cursor + payload_len > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: payload_len,
+            available: bytes.len().saturating_sub(cursor),
+        });
+    }
+    let payload = bytes[cursor..cursor + payload_len].to_vec();
+    Ok((K::new(qtype, qattribute::NONE, k0_inner::opaque(payload)), cursor + payload_len))
+}
+
+fn deserialize_unary_primitive_or_null(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
+    if cursor + 1 > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 1,
+            available: bytes.len().saturating_sub(cursor),
+        });
+    }
+    let id = bytes[cursor];
+
+    // (::) is encoded as unary primitive id 0.
+    if id == 0x00 {
+        return Ok((
+            K::new(qtype::NULL, qattribute::NONE, k0_inner::null(())),
+            cursor + 1,
+        ));
+    }
+
+    Ok((
+        K::new(
+            qtype::UNARY_PRIMITIVE,
+            qattribute::NONE,
+            k0_inner::opaque(vec![id]),
+        ),
+        cursor + 1,
+    ))
+}
+
+fn deserialize_projection_opaque(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+) -> Result<(K, usize)> {
+    // Projection format (as observed from q -8!):
+    //   byte 104, then i32 count N, then N serialized q objects.
+    if cursor + 4 > bytes.len() {
+        return Err(Error::InsufficientData {
+            needed: 4,
+            available: bytes.len().saturating_sub(cursor),
+        });
+    }
+
+    if depth > max_recursion_depth {
+        return Err(Error::MaxDepthExceeded {
+            depth,
+            max: max_recursion_depth,
+        });
+    }
+
+    let n_bytes: [u8; 4] = bytes[cursor..cursor + 4]
+        .try_into()
+        .map_err(|_| Error::DeserializationError("invalid projection count bytes".to_string()))?;
+    let n = match encode {
+        0 => i32::from_be_bytes(n_bytes),
+        _ => i32::from_le_bytes(n_bytes),
+    };
+    if n < 0 {
+        return Err(Error::DeserializationError(
+            "invalid projection count (negative)".to_string(),
+        ));
+    }
+    let n = n as usize;
+
+    let start_payload = cursor;
+    let mut next = cursor + 4;
+    for _ in 0..n {
+        let (_k, new_cursor) = deserialize_bytes_sync(
+            bytes,
+            next,
+            encode,
+            depth + 1,
+            max_list_size,
+            max_recursion_depth,
+        )?;
+        next = new_cursor;
+    }
+
+    let payload = bytes[start_payload..next].to_vec();
+    Ok((
+        K::new(qtype::PROJECTION, qattribute::NONE, k0_inner::opaque(payload)),
+        next,
+    ))
 }
 
 fn deserialize_lambda_sync(
@@ -990,11 +1108,10 @@ fn deserialize_dictionary_sync(
     Ok((dictionary, cursor))
 }
 
-fn deserialize_null(_bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
-    Ok((
-        K::new(qtype::NULL, qattribute::NONE, k0_inner::null(())),
-        cursor,
-    ))
+fn deserialize_null(bytes: &[u8], cursor: usize, encode: u8) -> Result<(K, usize)> {
+    // Kept for backwards compatibility: historically qtype::NULL(101) was treated as a dedicated
+    // type, but on the wire it is actually a unary primitive with id 0.
+    deserialize_unary_primitive_or_null(bytes, cursor, encode)
 }
 
 fn deserialize_error(bytes: &[u8], cursor: usize, _: u8) -> Result<(K, usize)> {
