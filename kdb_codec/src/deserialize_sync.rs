@@ -580,6 +580,16 @@ fn deserialize_bytes_sync(
             max_list_size,
             max_recursion_depth,
         ),
+        qtype::COMPOSITION => deserialize_counted_or_fixed_arity_opaque(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+            qtype::COMPOSITION,
+            2,
+        ),
         qtype::EACH => deserialize_single_inner_opaque(
             bytes,
             cursor + 1,
@@ -630,6 +640,16 @@ fn deserialize_bytes_sync(
             depth,
             max_list_size,
             max_recursion_depth,
+        ),
+        qtype::FOREIGN => deserialize_counted_or_fixed_arity_opaque(
+            bytes,
+            cursor + 1,
+            encode,
+            depth,
+            max_list_size,
+            max_recursion_depth,
+            qtype::FOREIGN,
+            3,
         ),
         qtype::ERROR => deserialize_error(bytes, cursor + 1, encode),
         _ => Err(Error::InvalidType(qtype)),
@@ -735,6 +755,96 @@ fn deserialize_projection_opaque(
     let payload = bytes[start_payload..next].to_vec();
     Ok((
         K::new(qtype::PROJECTION, qattribute::NONE, k0_inner::opaque(payload)),
+        next,
+    ))
+}
+
+fn deserialize_counted_or_fixed_arity_opaque(
+    bytes: &[u8],
+    cursor: usize,
+    encode: u8,
+    depth: usize,
+    max_list_size: usize,
+    max_recursion_depth: usize,
+    outer_qtype: i8,
+    fallback_arity: usize,
+) -> Result<(K, usize)> {
+    // Heuristic decoder for opaque function-ish types.
+    //
+    // Some q objects (e.g. projections) encode as:
+    //   <type byte> <i32 count N> <N serialized q objects>
+    //
+    // Other objects appear to encode as a fixed number of serialized q objects without the count.
+    // We attempt the counted form first (if the count looks plausible), otherwise fall back to
+    // reading `fallback_arity` serialized q objects.
+    if depth > max_recursion_depth {
+        return Err(Error::MaxDepthExceeded {
+            depth,
+            max: max_recursion_depth,
+        });
+    }
+
+    // Attempt counted form.
+    if cursor + 4 <= bytes.len() {
+        let n_bytes: [u8; 4] = bytes[cursor..cursor + 4]
+            .try_into()
+            .map_err(|_| Error::DeserializationError("invalid count bytes".to_string()))?;
+        let n = match encode {
+            0 => i32::from_be_bytes(n_bytes),
+            _ => i32::from_le_bytes(n_bytes),
+        };
+
+        if n >= 0 {
+            let n_usize = n as usize;
+            if n_usize <= max_list_size {
+                let start_payload = cursor;
+                let mut next = cursor + 4;
+                let mut ok = true;
+                for _ in 0..n_usize {
+                    match deserialize_bytes_sync(
+                        bytes,
+                        next,
+                        encode,
+                        depth + 1,
+                        max_list_size,
+                        max_recursion_depth,
+                    ) {
+                        Ok((_k, new_cursor)) => next = new_cursor,
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+
+                if ok {
+                    let payload = bytes[start_payload..next].to_vec();
+                    return Ok((
+                        K::new(outer_qtype, qattribute::NONE, k0_inner::opaque(payload)),
+                        next,
+                    ));
+                }
+            }
+        }
+    }
+
+    // Fall back to fixed-arity form.
+    let start_payload = cursor;
+    let mut next = cursor;
+    for _ in 0..fallback_arity {
+        let (_k, new_cursor) = deserialize_bytes_sync(
+            bytes,
+            next,
+            encode,
+            depth + 1,
+            max_list_size,
+            max_recursion_depth,
+        )?;
+        next = new_cursor;
+    }
+    let payload = bytes[start_payload..next].to_vec();
+    Ok((
+        K::new(outer_qtype, qattribute::NONE, k0_inner::opaque(payload)),
         next,
     ))
 }

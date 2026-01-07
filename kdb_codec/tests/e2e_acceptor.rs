@@ -8,13 +8,6 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-fn should_run() -> bool {
-    matches!(
-        std::env::var("KDBPLUS_RUN_Q_E2E_TESTS").ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE")
-    )
-}
-
 fn q_bin() -> String {
     if let Ok(bin) = std::env::var("KDBPLUS_Q_BIN") {
         return bin;
@@ -113,13 +106,8 @@ async fn run_acceptor_echo_once(port: u16) -> Result<()> {
 }
 
 #[test]
+#[ignore] // Ignored by default since it requires q binary
 fn e2e_q_script_to_rust_acceptor_echo_roundtrip() -> Result<()> {
-    if !should_run() {
-        eprintln!(
-            "skipping q e2e acceptor test (set KDBPLUS_RUN_Q_E2E_TESTS=1 to enable; optionally set KDBPLUS_Q_BIN)"
-        );
-        return Ok(());
-    }
 
     let user = "e2e";
     let pass = "e2e";

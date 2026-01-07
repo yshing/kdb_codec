@@ -128,6 +128,26 @@ run:{
   assertIpcEq["projection (1+)"; (1+); send[h; (1+)]];
   assertIpcEq["projection (+[;2])"; (+[;2]); send[h; (+[;2])]];
 
+  / compositions (roundtrip by IPC bytes)
+  assertIpcEq["composition (0|+)"; (0|+); send[h; (0|+)]];
+
+  / dynamic load (type 112) / optional
+  / Provide these env vars to enable this check:
+  / - KDBCODEC_E2E_DYLIB  (string for file symbol, e.g. ":/absolute/path/to/lib.dylib")
+  / - KDBCODEC_E2E_CFUNC  (C function name, e.g. "q_read_cycles_of_this_cpu")
+  / - KDBCODEC_E2E_RANK   (int, e.g. "1")
+  dylib:getenv `KDBCODEC_E2E_DYLIB;
+  cfn:getenv `KDBCODEC_E2E_CFUNC;
+  rnkstr:getenv `KDBCODEC_E2E_RANK;
+  if[(0<count dylib) & (0<count cfn) & (0<count rnkstr);
+    rnk:"I"$rnkstr;
+    fs:`$dylib;
+    fn:@[fs 2: (`$cfn; rnk); (); {()}];
+    if[not ()~fn;
+      assertIpcEq["dynamic load (2:)"; fn; send[h; fn]];
+    ];
+  ];
+
   / derived functions (roundtrip by IPC bytes)
   assertIpcEq["derived over (+/)"; (+/); send[h; (+/)]];
   assertIpcEq["derived scan (+\\)"; (+\\); send[h; (+\\)]];

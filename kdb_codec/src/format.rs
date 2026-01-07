@@ -919,8 +919,17 @@ fn put_q(object: &K, stream: &mut String, precision: usize) {
         },
         qtype::BINARY_PRIMITIVE => stream.push_str("<binary primitive>"),
         qtype::PROJECTION => stream.push_str("<projection>"),
+        qtype::COMPOSITION => stream.push_str("<composition>"),
+        qtype::EACH => stream.push_str("<each>"),
         qtype::OVER => stream.push_str("<over>"),
         qtype::SCAN => stream.push_str("<scan>"),
-        _ => unimplemented!(),
+        qtype::EACH_PRIOR => stream.push_str("<each-prior>"),
+        qtype::EACH_LEFT => stream.push_str("<each-left>"),
+        qtype::EACH_RIGHT => stream.push_str("<each-right>"),
+        qtype::FOREIGN => stream.push_str("<dynamic load>"),
+        _ => {
+            // Avoid panicking on partially-supported/opaque types.
+            stream.push_str(&format!("<qtype {}>", object.0.qtype));
+        }
     }
 }

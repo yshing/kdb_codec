@@ -358,12 +358,13 @@ Some tests require a running kdb+ server and are marked as `#[ignore]` by defaul
 
 1. Start a kdb+ server on `localhost:5001` with credentials `kdbuser:pass`:
    ```bash
-   q -p 5001 -u path/to/passwd/file
+   q -p 5001 -u ./tests/test_kdb_passwd
    ```
 
 2. Run the ignored tests:
    ```bash
    cargo test --package kdb_codec --tests -- --ignored
+   cargo test --package kdb_codec --test e2e_acceptor -- e2e_q_script_to_rust_acceptor_echo_roundtrip --exact --nocapture --ignored
    ```
 
 The integration tests include:
