@@ -358,6 +358,67 @@ impl K {
             crate::MAX_RECURSION_DEPTH,
         )
     }
+
+    /// Decode a complete IPC message including the 8-byte header.
+    ///
+    /// This method is the counterpart to `ipc_msg_encode()`, handling:
+    /// - Parsing the 8-byte IPC message header
+    /// - Automatic decompression if the compressed flag is set
+    /// - Decoding the payload into a K object
+    ///
+    /// # Arguments
+    /// * `bytes` - Complete IPC message bytes including the 8-byte header
+    ///
+    /// # Returns
+    /// A tuple of `(MessageHeader, K)` containing the parsed header and decoded K object
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The message is shorter than 8 bytes
+    /// - The header is malformed
+    /// - Decompression fails (if compressed)
+    /// - Deserialization of the payload fails
+    ///
+    /// # Example
+    /// ```
+    /// use kdb_codec::qtype;
+    /// use kdb_codec::K;
+    /// use kdb_codec::qmsg_type;
+    ///
+    /// let original = K::new_long(42);
+    /// let msg = original.ipc_msg_encode(qmsg_type::synchronous, false);
+    ///
+    /// let (header, decoded) = K::ipc_msg_decode(&msg).unwrap();
+    /// assert_eq!(header.message_type, qmsg_type::synchronous);
+    /// assert_eq!(header.compressed, 0);
+    /// ```
+    pub fn ipc_msg_decode(bytes: &[u8]) -> Result<(crate::codec::MessageHeader, K)> {
+        use crate::codec::{decompress_sync, MessageHeader};
+
+        // Parse the 8-byte header
+        let header = MessageHeader::from_bytes(bytes)?;
+
+        // Extract payload starting from byte 8
+        if bytes.len() < MessageHeader::size() {
+            return Err(Error::InvalidMessageSize);
+        }
+
+        let payload_bytes = &bytes[MessageHeader::size()..];
+
+        // Handle compression
+        let decoded_payload = if header.compressed == 1 {
+            // Decompress: payload_bytes contains [uncompressed_size: 4 bytes][compressed_data]
+            decompress_sync(payload_bytes.to_vec(), header.encoding, None)?
+        } else {
+            // Uncompressed: payload_bytes is the raw serialized K object
+            payload_bytes.to_vec()
+        };
+
+        // Decode the K object from the payload
+        let k = K::q_ipc_decode(&decoded_payload, header.encoding)?;
+
+        Ok((header, k))
+    }
 }
 
 /// Synchronously decode K object from bytes (for codec)
