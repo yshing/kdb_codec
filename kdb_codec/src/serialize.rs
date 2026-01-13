@@ -36,6 +36,129 @@ impl K {
         serialize_q(self, &mut stream);
         stream
     }
+
+    /// Serialize q object to complete IPC message bytes including the 8-byte IPC message header,
+    /// optionally attempting kdb+ IPC compression.
+    ///
+    /// When `compress` is true, this will attempt to compress the message using the kdb+ IPC
+    /// compression algorithm (equivalent to q `-18!`). If compression does not reduce the message
+    /// to less than half its original size, the uncompressed message is returned.
+    pub fn ipc_msg_encode(&self, msg_type: u8, compress: bool) -> Vec<u8> {
+        let payload_bytes = self.q_ipc_encode();
+        let message_length = payload_bytes.len();
+        let total_length = (MessageHeader::size() + message_length) as u32;
+
+        if compress {
+            // Prepare raw message with placeholder header and payload
+            let mut raw = Vec::with_capacity(MessageHeader::size() + message_length);
+            raw.extend_from_slice(&[ENCODING, msg_type, 0, 0, 0, 0, 0, 0]);
+            raw.extend_from_slice(&payload_bytes);
+
+            // Try to compress
+            let (was_compressed, mut bytes) = compress_sync(raw);
+            if was_compressed {
+                return bytes;
+            }
+
+            // Not compressed: write correct total length into header
+            let total_length_bytes = match ENCODING {
+                0 => total_length.to_be_bytes(),
+                _ => total_length.to_le_bytes(),
+            };
+            bytes[4..8].copy_from_slice(&total_length_bytes);
+            return bytes;
+        }
+
+        // Uncompressed message
+        let header = MessageHeader {
+            encoding: ENCODING,
+            message_type: msg_type,
+            compressed: 0,
+            _unused: 0,
+            length: total_length,
+        };
+
+        let mut out = Vec::with_capacity(MessageHeader::size() + message_length);
+        out.extend_from_slice(&header.to_bytes());
+        out.extend_from_slice(&payload_bytes);
+        out
+    }
+    
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::qmsg_type;
+
+    fn read_u32(bytes: &[u8]) -> u32 {
+        match ENCODING {
+            0 => u32::from_be_bytes(bytes.try_into().unwrap()),
+            _ => u32::from_le_bytes(bytes.try_into().unwrap()),
+        }
+    }
+
+    #[test]
+    fn ipc_msg_encode_uncompressed_has_valid_header_and_length() {
+        let k = K::new_int(42);
+        let payload = k.q_ipc_encode();
+        let msg = k.ipc_msg_encode(qmsg_type::synchronous, false);
+
+        assert_eq!(msg[0], ENCODING);
+        assert_eq!(msg[1], qmsg_type::synchronous);
+        assert_eq!(msg[2], 0);
+        assert_eq!(msg[3], 0);
+
+        let length = read_u32(&msg[4..8]);
+        assert_eq!(length as usize, msg.len());
+        assert_eq!(length as usize, MessageHeader::size() + payload.len());
+
+        assert_eq!(&msg[MessageHeader::size()..], payload.as_slice());
+    }
+
+    #[test]
+    fn ipc_msg_encode_with_compression_produces_compressed_frame_and_roundtrips() {
+        // Highly compressible payload
+        let k = K::new_byte_list(vec![0u8; 20_000], qattribute::NONE);
+        let payload = k.q_ipc_encode();
+        let msg = k.ipc_msg_encode(qmsg_type::synchronous, true);
+
+        assert_eq!(msg[0], ENCODING);
+        assert_eq!(msg[1], qmsg_type::synchronous);
+        assert_eq!(msg[2], 1);
+        assert_eq!(msg[3], 0);
+
+        let compressed_total_len = read_u32(&msg[4..8]) as usize;
+        assert_eq!(compressed_total_len, msg.len());
+
+        let uncompressed_total_len = read_u32(&msg[8..12]) as usize;
+        assert_eq!(uncompressed_total_len, MessageHeader::size() + payload.len());
+
+        let decompressed_payload = decompress_sync(msg[8..].to_vec(), msg[0], None).unwrap();
+        assert_eq!(decompressed_payload, payload);
+    }
+
+    #[test]
+    fn ipc_msg_encode_with_compression_falls_back_to_uncompressed_when_not_worth_it() {
+        // Pseudo-random-ish bytes should not compress to < half.
+        let data: Vec<u8> = (0u32..5000)
+            .map(|i| ((i.wrapping_mul(31).wrapping_add(7)) % 256) as u8)
+            .collect();
+        let k = K::new_byte_list(data, qattribute::NONE);
+        let payload = k.q_ipc_encode();
+
+        let msg = k.ipc_msg_encode(qmsg_type::synchronous, true);
+
+        assert_eq!(msg[0], ENCODING);
+        assert_eq!(msg[1], qmsg_type::synchronous);
+        assert_eq!(msg[2], 0);
+        assert_eq!(msg[3], 0);
+
+        let total_len = read_u32(&msg[4..8]) as usize;
+        assert_eq!(total_len, msg.len());
+        assert_eq!(total_len, MessageHeader::size() + payload.len());
+        assert_eq!(&msg[MessageHeader::size()..], payload.as_slice());
+    }
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
