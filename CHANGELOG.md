@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-14
+
+### Added
+
+- **K::ipc_msg_decode()** - New public API for decoding complete IPC messages with automatic header parsing and decompression
+  - Parses 8-byte IPC message headers using `MessageHeader::from_bytes()`
+  - Automatically decompresses messages when the compressed flag is set
+  - Returns tuple `(MessageHeader, K)` with both header metadata and decoded payload
+  - Symmetric counterpart to `K::ipc_msg_encode()` for complete encode/decode workflow
+  - Comprehensive unit tests covering uncompressed, compressed, and error cases
+
 ## [1.0.0] - 2026-01-14
 
 ### 🎉 Major Milestone: Complete IPC Message Type Support
