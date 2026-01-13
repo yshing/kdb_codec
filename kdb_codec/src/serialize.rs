@@ -159,6 +159,65 @@ mod tests {
         assert_eq!(total_len, MessageHeader::size() + payload.len());
         assert_eq!(&msg[MessageHeader::size()..], payload.as_slice());
     }
+
+    #[test]
+    fn ipc_msg_decode_uncompressed_roundtrips() {
+        let original = K::new_int(42);
+        let msg = original.ipc_msg_encode(qmsg_type::synchronous, false);
+
+        let (header, decoded) = K::ipc_msg_decode(&msg).unwrap();
+
+        assert_eq!(header.encoding, ENCODING);
+        assert_eq!(header.message_type, qmsg_type::synchronous);
+        assert_eq!(header.compressed, 0);
+        assert_eq!(header.length as usize, msg.len());
+
+        assert_eq!(decoded.get_type(), qtype::INT_ATOM);
+        assert_eq!(decoded.get_int().unwrap(), 42);
+    }
+
+    #[test]
+    fn ipc_msg_decode_compressed_roundtrips() {
+        // Highly compressible payload
+        let original = K::new_byte_list(vec![0u8; 20_000], qattribute::NONE);
+        let msg = original.ipc_msg_encode(qmsg_type::asynchronous, true);
+
+        let (header, decoded) = K::ipc_msg_decode(&msg).unwrap();
+
+        assert_eq!(header.encoding, ENCODING);
+        assert_eq!(header.message_type, qmsg_type::asynchronous);
+        assert_eq!(header.compressed, 1);
+
+        assert_eq!(decoded.get_type(), qtype::BYTE_LIST);
+        let decoded_list = decoded.as_vec::<u8>().unwrap();
+        assert_eq!(decoded_list.len(), 20_000);
+        assert!(decoded_list.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn ipc_msg_decode_complex_object_roundtrips() {
+        // Test with a symbol list
+        let original = K::new_symbol_list(
+            vec!["hello".to_string(), "world".to_string(), "kdb".to_string()],
+            qattribute::NONE,
+        );
+        let msg = original.ipc_msg_encode(qmsg_type::response, false);
+
+        let (header, decoded) = K::ipc_msg_decode(&msg).unwrap();
+
+        assert_eq!(header.message_type, qmsg_type::response);
+        assert_eq!(decoded.get_type(), qtype::SYMBOL_LIST);
+
+        let decoded_list = decoded.as_vec::<String>().unwrap();
+        assert_eq!(*decoded_list, vec!["hello".to_string(), "world".to_string(), "kdb".to_string()]);
+    }
+
+    #[test]
+    fn ipc_msg_decode_fails_on_invalid_header() {
+        let invalid_msg = vec![1, 2, 3]; // Too short for a header
+        let result = K::ipc_msg_decode(&invalid_msg);
+        assert!(result.is_err());
+    }
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++//
