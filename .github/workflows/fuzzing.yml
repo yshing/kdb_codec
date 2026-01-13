@@ -1,0 +1,112 @@
+name: Fuzzing
+
+on:
+  schedule:
+    # Run fuzzing every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds'
+        required: false
+        default: '3600'
+
+jobs:
+  fuzz:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_q_ipc_decode
+          - fuzz_decompress
+          - fuzz_codec_decode
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Cache fuzz corpus
+        uses: actions/cache@v3
+        with:
+          path: kdb_codec/fuzz/corpus
+          key: ${{ runner.os }}-fuzz-corpus-${{ matrix.target }}
+      
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      
+      - name: Run fuzzing
+        working-directory: kdb_codec
+        run: |
+          DURATION=${{ github.event.inputs.duration || '3600' }}
+          echo "Running fuzzer ${{ matrix.target }} for ${DURATION} seconds"
+          
+          # Run with memory limit and timeout
+          cargo +nightly fuzz run ${{ matrix.target }} -- \
+            -max_total_time=${DURATION} \
+            -rss_limit_mb=2048 \
+            -timeout=30 \
+            || true
+      
+      - name: Check for crashes
+        if: always()
+        working-directory: kdb_codec
+        run: |
+          if [ -d "fuzz/artifacts/${{ matrix.target }}" ] && [ "$(ls -A fuzz/artifacts/${{ matrix.target }})" ]; then
+            echo "::error::Fuzzer found crashes!"
+            ls -la fuzz/artifacts/${{ matrix.target }}/
+            exit 1
+          else
+            echo "No crashes found"
+          fi
+      
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: kdb_codec/fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+      
+      - name: Generate coverage report
+        if: success()
+        working-directory: kdb_codec
+        run: |
+          cargo +nightly fuzz coverage ${{ matrix.target }} || true
+      
+      - name: Upload coverage
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-${{ matrix.target }}
+          path: kdb_codec/fuzz/coverage/
+          if-no-files-found: ignore
+
+  summary:
+    name: Fuzzing Summary
+    needs: fuzz
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check fuzzing results
+        run: |
+          echo "Fuzzing workflow completed"
+          if [ "${{ needs.fuzz.result }}" != "success" ]; then
+            echo "::warning::Some fuzzers found issues or failed"
+          fi

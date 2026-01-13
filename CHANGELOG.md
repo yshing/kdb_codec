@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-14
+
+### 🎉 Major Milestone: Complete IPC Message Type Support
+
+This release marks a significant milestone with **complete roundtrip support for all kdb+ IPC message types**, making the library production-ready for comprehensive q/kdb+ integration.
+
+### Added
+
+- **Complete IPC Type Coverage** - Added support for all remaining q function/adverb types:
+  - Type 100: Lambda functions (`{x+y}`)
+  - Type 101: Unary primitives and null (`::`)
+  - Type 102: Binary operators
+  - Type 104: Projection
+  - Type 105: Composition
+  - Type 106-111: Each adverbs (`'`, `/:`, `\:`, `':`) 
+  - Type 112: Over/Scan adverbs
+- **K::ipc_msg_encode()** - New public API for serializing K objects to complete IPC messages
+  - Generates proper 8-byte IPC message headers
+  - Optional compression support (equivalent to q `-18!`)
+  - Automatic fallback to uncompressed when compression isn't beneficial
+  - Comprehensive unit tests for all encoding scenarios
+- **Enhanced Serialization** - Full support for table attributes (`s#` for sorted tables)
+- **E2E Testing** - Added end-to-end acceptor decoding tests for real-world validation
+
+### Changed
+
+- **Opaque Roundtrip Pattern** - Function types now use opaque payload storage for safe roundtrip
+  - Preserves exact wire format without requiring full semantic understanding
+  - Ensures compatibility with all q versions and edge cases
+- Improved null/unary primitive handling with proper type byte encoding
+
+### Fixed
+
+- Table attribute serialization now correctly preserves sorted/unique/parted/grouped flags
+- Documentation test fixes for error handling examples
+- Decompression bomb test edge case handling
+
+### Documentation
+
+- Added comprehensive examples for lambda and function type handling
+- Updated type mapping documentation to reflect 100% IPC type coverage
+- New example: `echo_acceptor.rs` demonstrating bidirectional IPC communication
+
+### Security
+
+- All new type handlers follow the same strict validation patterns
+- Decompression bomb protection applies to all message types
+- Safe handling of untrusted function payloads via opaque storage
+
+### Notes
+
+**Production Readiness**: With complete IPC type support, comprehensive security hardening, and extensive test coverage, this library is now suitable for production use in demanding environments. All kdb+ IPC message types can be safely encoded, decoded, and round-tripped.
+
 ## [0.3.1] - 2026-01-02
 
 ### Security
