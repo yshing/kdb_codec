@@ -110,6 +110,12 @@ pub(crate) enum k0_inner {
     list(k0_list),
     /// Null type holder.
     null(()),
+    /// Lambda function type holder.
+    lambda { context: S, body: S },
+    /// Opaque IPC payload holder (bytes after the type byte).
+    ///
+    /// Used for roundtrip-only support of types where we don't yet have a rich Rust representation.
+    opaque(Vec<u8>),
 }
 
 //%% k0 %%//vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/
@@ -490,6 +496,18 @@ impl K {
             qtype::SYMBOL_ATOM,
             qattribute::NONE,
             k0_inner::symbol(symbol),
+        )
+    }
+
+    /// Construct q lambda function.
+    ///
+    /// The `context` is serialized as a null-terminated string immediately after the type byte.
+    /// The `body` is serialized as a char vector (type 10).
+    pub fn new_lambda(context: String, body: String) -> Self {
+        K::new(
+            qtype::LAMBDA,
+            qattribute::NONE,
+            k0_inner::lambda { context, body },
         )
     }
 
@@ -1836,14 +1854,9 @@ impl K {
     /// ```
     /// use kdb_codec::*;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<()> {
-    ///     let mut socket = QStream::connect(ConnectionMethod::TCP, "localhost", 5001, "kdbuser:pass")
-    ///         .await
-    ///         .expect("Failed to connect");
-    ///     let result = socket.send_sync_message(&"1+`a").await?;
-    ///     assert_eq!(result.get_error_string(), Ok("type"));
-    ///     Ok(())
+    /// fn main() {
+    ///     let error = K::new_error(String::from("type"));
+    ///     assert_eq!(error.get_error_string(), Ok("type"));
     /// }
     /// ```
     pub fn get_error_string(&self) -> Result<&str> {
@@ -1877,6 +1890,19 @@ impl K {
                 )),
             },
             _ => Err(Error::invalid_cast(self.0.qtype, qtype::STRING)),
+        }
+    }
+
+    /// Get the underlying lambda parts `(context, body)`.
+    pub fn as_lambda(&self) -> Result<(&str, &str)> {
+        match self.0.qtype {
+            qtype::LAMBDA => match &self.0.value {
+                k0_inner::lambda { context, body } => Ok((context.as_str(), body.as_str())),
+                _ => Err(Error::DeserializationError(
+                    "inconsistent K object for LAMBDA".to_string(),
+                )),
+            },
+            _ => Err(Error::invalid_cast(self.0.qtype, qtype::LAMBDA)),
         }
     }
 

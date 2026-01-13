@@ -103,15 +103,26 @@ pub mod qmsg_type {
 
 //%% QStream Acceptor %%//vvvvvvvvvvvvvvvvvvvvvvvvvvv/
 
+/// Default path for acceptor account file (relative to the current working directory).
+const DEFAULT_ACCOUNT_FILE: &str = "credential/kdbaccess";
+
+/// Environment variable to override acceptor account file path.
+///
+/// Format: `username:sha1_password` per line.
+const ACCOUNT_FILE_ENV: &str = "KDBPLUS_ACCOUNT_FILE";
+
 /// Map from user name to password hashed with SHA1.
 const ACCOUNTS: Lazy<HashMap<String, String>> = Lazy::new(|| {
     // Map from user to password
     let mut map: HashMap<String, String> = HashMap::new();
-    // Open credential file
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .open("credential/kdbaccess")
-        .expect("failed to open account file");
+
+    let path = env::var(ACCOUNT_FILE_ENV).unwrap_or_else(|_| DEFAULT_ACCOUNT_FILE.to_string());
+
+    // Open credential file (if missing, keep empty map so acceptor auth fails gracefully)
+    let file = match fs::OpenOptions::new().read(true).open(&path) {
+        Ok(f) => f,
+        Err(_) => return map,
+    };
     let mut reader = io::BufReader::new(file);
     let mut line = String::new();
     loop {
@@ -122,7 +133,9 @@ const ACCOUNTS: Lazy<HashMap<String, String>> = Lazy::new(|| {
             }
             Ok(_) => {
                 let credential: Vec<&str> = line.trim_end().split(':').collect();
-                map.insert(credential[0].to_string(), credential[1].to_string());
+                if credential.len() >= 2 {
+                    map.insert(credential[0].to_string(), credential[1].to_string());
+                }
                 line.clear();
             }
             Err(_) => break,
@@ -883,6 +896,7 @@ async fn read_client_input<S>(socket: &mut S) -> Result<()>
 where
     S: Unpin + AsyncWriteExt + AsyncReadExt,
 {
+    let debug_auth = matches!(std::env::var("KDBPLUS_DEBUG_AUTH").ok().as_deref(), Some("1"));
     // Buffer to read inputs.
     let mut client_input = [0u8; 32];
     // credential will be built from small fractions of bytes.
@@ -891,18 +905,37 @@ where
         // Read a client credential input.
         match socket.read(&mut client_input).await {
             Ok(0) => {
-                // No bytes were read
+                // Client closed the connection.
+                socket.shutdown().await?;
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "client disconnected").into());
             }
-            Ok(_) => {
-                // Locate a byte denoting a capacity
-                if let Some(index) = client_input
-                    .iter()
-                    .position(|byte| *byte == 0x03 || *byte == 0x06)
+            Ok(n) => {
+                let chunk = &client_input[..n];
+                // Locate a byte denoting a capacity.
+                if let Some(index) = chunk.iter().position(|byte| *byte == 0x03 || *byte == 0x06)
                 {
-                    let capacity = client_input[index];
+                    let capacity = chunk[index];
                     passed_credential
-                        .push_str(str::from_utf8(&client_input[0..index]).expect("invalid bytes"));
+                        .push_str(str::from_utf8(&chunk[0..index]).expect("invalid bytes"));
                     let credential = passed_credential.as_str().split(':').collect::<Vec<&str>>();
+                    if credential.len() < 2 {
+                        if debug_auth {
+                            eprintln!("[acceptor auth] invalid credential format");
+                        }
+                        // Authentication failure.
+                        socket.shutdown().await?;
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "authentication failed",
+                        )
+                        .into());
+                    }
+                    if debug_auth {
+                        eprintln!(
+                            "[acceptor auth] user='{}' capacity=0x{:02x}",
+                            credential[0], capacity
+                        );
+                    }
                     if let Some(encoded) = ACCOUNTS.get(&credential[0].to_string()) {
                         // User exists
                         let mut hasher = Sha1::new();
@@ -910,9 +943,15 @@ where
                         let encoded_password = hasher.digest().to_string();
                         if encoded == &encoded_password {
                             // Client passed correct credential
+                            if debug_auth {
+                                eprintln!("[acceptor auth] success");
+                            }
                             socket.write_all(&[capacity; 1]).await?;
                             return Ok(());
                         } else {
+                            if debug_auth {
+                                eprintln!("[acceptor auth] password mismatch");
+                            }
                             // Authentication failure.
                             // Close connection.
                             socket.shutdown().await?;
@@ -923,6 +962,9 @@ where
                             .into());
                         }
                     } else {
+                        if debug_auth {
+                            eprintln!("[acceptor auth] unknown user");
+                        }
                         // Authentication failure.
                         // Close connection.
                         socket.shutdown().await?;
@@ -935,7 +977,7 @@ where
                 } else {
                     // Append a fraction of credential
                     passed_credential
-                        .push_str(str::from_utf8(&client_input).expect("invalid bytes"));
+                        .push_str(str::from_utf8(chunk).expect("invalid bytes"));
                 }
             }
             Err(error) => {

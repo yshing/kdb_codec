@@ -897,9 +897,39 @@ fn put_q(object: &K, stream: &mut String, precision: usize) {
             put_attribute(object.0.attribute, stream);
             put_time_list(object.as_vec::<I>().unwrap(), stream)
         }
+        qtype::LAMBDA => {
+            let (_context, body) = object.as_lambda().unwrap();
+            stream.push_str(body);
+        }
         qtype::TABLE => put_table(object, stream, precision),
         qtype::DICTIONARY | qtype::SORTED_DICTIONARY => put_dictionary(object, stream, precision),
-        qtype::NULL => stream.push_str("::"),
-        _ => unimplemented!(),
+        qtype::UNARY_PRIMITIVE => match &object.0.value {
+            k0_inner::null(()) => stream.push_str("::"),
+            k0_inner::opaque(payload) => {
+                // Roundtrip-only display. The id mapping is internal to q.
+                stream.push_str("<unary primitive ");
+                if let Some(id) = payload.first() {
+                    stream.push_str(&format!("0x{:02x}", id));
+                } else {
+                    stream.push_str("<missing id>");
+                }
+                stream.push('>');
+            }
+            _ => stream.push_str("::"),
+        },
+        qtype::BINARY_PRIMITIVE => stream.push_str("<binary primitive>"),
+        qtype::PROJECTION => stream.push_str("<projection>"),
+        qtype::COMPOSITION => stream.push_str("<composition>"),
+        qtype::EACH => stream.push_str("<each>"),
+        qtype::OVER => stream.push_str("<over>"),
+        qtype::SCAN => stream.push_str("<scan>"),
+        qtype::EACH_PRIOR => stream.push_str("<each-prior>"),
+        qtype::EACH_LEFT => stream.push_str("<each-left>"),
+        qtype::EACH_RIGHT => stream.push_str("<each-right>"),
+        qtype::FOREIGN => stream.push_str("<dynamic load>"),
+        _ => {
+            // Avoid panicking on partially-supported/opaque types.
+            stream.push_str(&format!("<qtype {}>", object.0.qtype));
+        }
     }
 }

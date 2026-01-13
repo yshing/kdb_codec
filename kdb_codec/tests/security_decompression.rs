@@ -58,16 +58,22 @@ fn test_decompression_bomb_large_size() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 
-    println!("Attempting decompression bomb test...");
+    // Use default max limit (512 MB) to catch decompression bomb
+    let max_size = Some(512 * 1024 * 1024);
+    let result = decompress_sync(compressed, 1, max_size);
 
-    // May fail with allocation error or succeed but be very slow
-    // This test mainly ensures we don't panic on large allocations
-    let result = decompress_sync(compressed, 1, None);
-
-    println!("Decompression bomb result: {:?}", result.is_ok());
-
-    // Note: This may succeed with large allocation, which is a known limitation
-    // Future: add max_decompressed_size validation
+    // Should reject the 2GB decompression request immediately
+    assert!(
+        result.is_err(),
+        "Should reject decompression bomb exceeding max size"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("exceeds maximum allowed size")
+            || err_msg.contains("compression bomb"),
+        "Error should mention size limit or compression bomb, got: {}",
+        err_msg
+    );
 }
 
 #[test]
